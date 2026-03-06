@@ -10,6 +10,7 @@ from faster_whisper import WhisperModel
 
 from constants import (
     ADAPTIVE_BEAM_SIZES,
+    DEFAULT_GPU_COMPUTE_TYPE,
     ENGLISH_LANGUAGE_CODE,
     THAI_LANGUAGE_CODE,
     TRANSCRIPTION_SOURCE_GOOGLE_CHIRP,
@@ -42,6 +43,7 @@ from constants import (
     WHISPER_REPETITION_PENALTY,
     WHISPER_TEMPERATURE_FALLBACK,
     WHISPER_TH_INITIAL_PROMPT,
+    WHISPER_CPU_THREADS,
     WHISPER_TRANSCRIPTION_BEAM_SIZE,
 )
 from google_stt import transcribe_with_chirp
@@ -89,13 +91,33 @@ def load_model(model_size: str, device: str, compute_type: str) -> WhisperModel:
     """
     global _model, _model_size
     if _model is None:
+        # Auto-upgrade int8 → float16 when CUDA is available.
+        # int8 is optimised for CPU SIMD; float16 exploits GPU tensor cores (~2-3x faster).
+        effective_compute_type = compute_type
+        if compute_type == "int8" and device in ("cuda", "auto"):
+            try:
+                import ctranslate2
+                if ctranslate2.get_cuda_device_count() > 0:
+                    effective_compute_type = DEFAULT_GPU_COMPUTE_TYPE
+                    logger.info(
+                        "CUDA detected — auto-upgrading compute_type: int8 → %s",
+                        DEFAULT_GPU_COMPUTE_TYPE,
+                    )
+            except Exception:
+                pass
+
         logger.info(
             "Loading faster-whisper model: size=%s, device=%s, compute_type=%s",
             model_size,
             device,
-            compute_type,
+            effective_compute_type,
         )
-        _model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        _model = WhisperModel(
+            model_size,
+            device=device,
+            compute_type=effective_compute_type,
+            cpu_threads=WHISPER_CPU_THREADS,
+        )
         _model_size = model_size
         logger.info("Model loaded successfully.")
     return _model

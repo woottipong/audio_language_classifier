@@ -28,6 +28,10 @@ GOOGLE_STT_RETRY_BACKOFF: float = 2.0  # Exponential backoff multiplier
 DEFAULT_MODEL_SIZE: str = "base"
 DEFAULT_DEVICE: str = "auto"
 DEFAULT_COMPUTE_TYPE: str = "int8"
+# GPU: float16 uses tensor cores (~2-3x faster than int8 which is CPU SIMD-optimised)
+DEFAULT_GPU_COMPUTE_TYPE: str = "float16"
+# CTranslate2 intra-op CPU threads used for audio preprocessing alongside GPU inference
+WHISPER_CPU_THREADS: int = 4
 
 # Standard Whisper models (can override with --model-size)
 WHISPER_BASE_MODEL: str = "base"

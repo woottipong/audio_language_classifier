@@ -131,7 +131,7 @@ class TestLoadModel:
         mock_model = MagicMock()
         with patch("classifier.WhisperModel", return_value=mock_model) as MockModel:
             result = load_model("base", "cpu", "int8")
-            MockModel.assert_called_once_with("base", device="cpu", compute_type="int8")
+            MockModel.assert_called_once_with("base", device="cpu", compute_type="int8", cpu_threads=4)
             assert result is mock_model
 
     def test_returns_cached_model_on_second_call(self) -> None:
