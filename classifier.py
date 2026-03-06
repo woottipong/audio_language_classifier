@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +47,7 @@ from constants import (
     WHISPER_TRANSCRIPTION_BEAM_SIZE,
     WHISPER_UNEXPECTED_LANG_PROB_THRESHOLD,
 )
+from exceptions import ModelLoadError
 from google_stt import transcribe_with_chirp
 
 logger = logging.getLogger(__name__)
@@ -168,11 +170,80 @@ def _get_vad_parameters(lang: str = "") -> dict:
     }
 
 
+def _ensure_ct2_model(model_id: str, quantization: str) -> str:
+    """Ensure a Whisper model is in CTranslate2 format, converting from HuggingFace
+    Transformers format if necessary.
+
+    faster-whisper requires CTranslate2 format (model.bin).  Standard HuggingFace
+    Transformers repos only ship pytorch_model.bin / model.safetensors.  This
+    function detects the format and, if needed, converts once using
+    ctranslate2.converters.TransformersConverter and caches the result under
+    $HF_HOME/ct2/ so subsequent runs skip conversion entirely.
+
+    Args:
+        model_id: HuggingFace model ID or local directory path
+        quantization: Quantization type for conversion (int8/float16/float32)
+
+    Returns:
+        Path string to a directory containing a valid CTranslate2 model.bin
+
+    Raises:
+        ModelLoadError: If the model cannot be loaded or converted
+    """
+    local = Path(model_id)
+    if local.exists():
+        if not (local / "model.bin").exists():
+            raise ModelLoadError(
+                f"Local model path '{model_id}' has no model.bin. "
+                "Convert with: ct2-transformers-converter --model <path> "
+                "--output_dir <out> --quantization int8"
+            )
+        return model_id
+
+    # For HuggingFace IDs: check for a previously converted CT2 copy in the HF cache
+    hf_home = Path(os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface")))
+    ct2_dir = hf_home / "ct2" / model_id.replace("/", "--")
+    if (ct2_dir / "model.bin").exists():
+        logger.info("Using cached CT2 model at %s", ct2_dir)
+        return str(ct2_dir)
+
+    # Convert Transformers → CTranslate2 (TransformersConverter downloads from HF Hub)
+    logger.info(
+        "Model %s is HuggingFace Transformers format. "
+        "Converting to CTranslate2 (quantization=%s) — this only runs once...",
+        model_id, quantization,
+    )
+    try:
+        from ctranslate2.converters import TransformersConverter  # type: ignore[import]
+    except ImportError as exc:
+        raise ModelLoadError(
+            "ctranslate2.converters not available. "
+            "Install: pip install ctranslate2 transformers"
+        ) from exc
+
+    ct2_dir.mkdir(parents=True, exist_ok=True)
+    valid_quantization = quantization if quantization in ("int8", "float16", "float32") else "int8"
+    try:
+        TransformersConverter(model_id).convert(str(ct2_dir), quantization=valid_quantization, force=True)
+    except Exception as exc:
+        raise ModelLoadError(
+            f"Failed to convert '{model_id}' to CTranslate2 format: {exc}"
+        ) from exc
+
+    logger.info("CT2 conversion complete, model saved at %s", ct2_dir)
+    return str(ct2_dir)
+
+
 def load_thai_model(model_id: str, device: str, compute_type: str) -> WhisperModel:
     """Load a Thai-optimised Whisper model for Thai transcription.
 
+    If the model_id points to a standard HuggingFace Transformers repo (no
+    model.bin), the model is automatically converted to CTranslate2 format and
+    cached so subsequent runs skip the conversion.
+
     Args:
         model_id: HuggingFace model ID (e.g. biodatlab/distill-whisper-th-large-v3)
+                  or local directory path to a CTranslate2 model
         device: Device to run on (auto/cpu/cuda)
         compute_type: Compute type (int8/float16/float32)
 
@@ -190,12 +261,13 @@ def load_thai_model(model_id: str, device: str, compute_type: str) -> WhisperMod
             except Exception:
                 pass
 
+        ct2_path = _ensure_ct2_model(model_id, effective_compute_type)
         logger.info(
             "Loading Thai model: %s (device=%s, compute_type=%s)",
             model_id, device, effective_compute_type,
         )
         _thai_model = WhisperModel(
-            model_id,
+            ct2_path,
             device=device,
             compute_type=effective_compute_type,
             cpu_threads=WHISPER_CPU_THREADS,

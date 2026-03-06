@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from config import AppConfig
+from constants import DEFAULT_MAX_WORKERS
 from exceptions import ConfigurationError
 
 
@@ -23,7 +24,7 @@ class TestAppConfigDefaults:
         assert AppConfig().compute_type == "int8"
 
     def test_default_workers(self) -> None:
-        assert AppConfig().max_workers == 4
+        assert AppConfig().max_workers == DEFAULT_MAX_WORKERS
 
     def test_default_cache_disabled(self) -> None:
         assert AppConfig().enable_cache is False
