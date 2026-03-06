@@ -27,8 +27,6 @@ from constants import (
     WHISPER_EN_NO_SPEECH_THRESHOLD,
     WHISPER_EN_REPETITION_PENALTY,
     WHISPER_EN_COMPRESSION_RATIO_THRESHOLD,
-    WHISPER_INITIAL_PROMPT_EN,
-    WHISPER_INITIAL_PROMPT_TH,
     WHISPER_EN_VAD_MIN_SILENCE_DURATION_MS,
     WHISPER_EN_VAD_THRESHOLD,
     WHISPER_HALLUCINATION_WORD_RATIO,
@@ -216,27 +214,18 @@ def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
     # EN uses lenient params — conversation speech has natural repetition and pauses.
     # All other languages use the default TH-tuned anti-hallucination params.
     is_english = detected_lang == ENGLISH_LANGUAGE_CODE
-    is_thai = detected_lang == THAI_LANGUAGE_CODE
     condition_on_prev = WHISPER_EN_CONDITION_ON_PREVIOUS_TEXT if is_english else WHISPER_CONDITION_ON_PREVIOUS_TEXT
     repetition_penalty = WHISPER_EN_REPETITION_PENALTY if is_english else WHISPER_REPETITION_PENALTY
     no_repeat_ngram_size = WHISPER_EN_NO_REPEAT_NGRAM_SIZE if is_english else WHISPER_NO_REPEAT_NGRAM_SIZE
     log_prob_threshold = WHISPER_EN_LOG_PROB_THRESHOLD if is_english else WHISPER_LOG_PROB_THRESHOLD
     no_speech_threshold = WHISPER_EN_NO_SPEECH_THRESHOLD if is_english else WHISPER_NO_SPEECH_THRESHOLD
     compression_ratio_threshold = WHISPER_EN_COMPRESSION_RATIO_THRESHOLD if is_english else WHISPER_COMPRESSION_RATIO_THRESHOLD
-    # Domain prompt helps on noisy telephone audio — only for TH and EN (known domains)
-    if is_english:
-        initial_prompt: str | None = WHISPER_INITIAL_PROMPT_EN
-    elif is_thai:
-        initial_prompt = WHISPER_INITIAL_PROMPT_TH
-    else:
-        initial_prompt = None
 
     beam_size = _get_adaptive_beam_size("transcription")
     segments, info = model.transcribe(
         str(file_path),
         language=detected_lang,
         beam_size=beam_size,
-        initial_prompt=initial_prompt,
         condition_on_previous_text=condition_on_prev,
         repetition_penalty=repetition_penalty,
         no_repeat_ngram_size=no_repeat_ngram_size,
@@ -251,7 +240,8 @@ def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
     duration = duration or (round(info.duration, 2) if hasattr(info, "duration") else 0.0)
 
     segments_list = list(segments)
-    transcription = " ".join(segment.text for segment in segments_list).strip()
+    transcription = " ".join(segment.text.strip() for segment in segments_list).strip()
+    transcription = _clean_transcription(transcription, detected_lang)
 
     # Guard: if the output is still a hallucination loop, return empty and warn
     if _is_hallucination(transcription):
@@ -287,6 +277,27 @@ def _transcribe_thai_with_google(file_path: Path, whisper_transcription: str, se
         return whisper_transcription, TRANSCRIPTION_SOURCE_WHISPER_FALLBACK
     
     return transcription_text, TRANSCRIPTION_SOURCE_GOOGLE_CHIRP
+
+
+def _clean_transcription(text: str, lang: str) -> str:
+    """Remove artifact characters that Whisper hallucinates on noisy telephone audio.
+
+    On 8kHz G.711 codec audio, Whisper sometimes emits Arabic, Hebrew, or Latin
+    diacritic characters that are not present in the actual speech.  For Thai output
+    we keep only Thai script (U+0E00–U+0E7F), ASCII printable, and whitespace.
+    For other languages we only strip the known-bad non-Latin Unicode blocks that
+    appear in our data (Arabic U+0600–U+06FF, Hebrew U+0590–U+05FF).
+    """
+    import re
+    if lang == THAI_LANGUAGE_CODE:
+        # Keep Thai script + ASCII printable + whitespace; strip everything else
+        text = re.sub(r"[^\u0e00-\u0e7f\u0020-\u007e\s]", "", text)
+    else:
+        # Strip Arabic and Hebrew blocks that appear as Whisper artifacts
+        text = re.sub(r"[\u0590-\u05ff\u0600-\u06ff]", "", text)
+    # Collapse multiple spaces that may result from removal
+    text = re.sub(r" {2,}", " ", text).strip()
+    return text
 
 
 def _is_hallucination(text: str) -> bool:
