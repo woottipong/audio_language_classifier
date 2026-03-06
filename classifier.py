@@ -149,20 +149,21 @@ def _detect_language_only(file_path: Path, model: WhisperModel) -> tuple:
         Tuple of (detected_lang, probability, duration)
     """
     beam_size = _get_adaptive_beam_size("detection")
+    # No VAD on detection pass — language ID comes from the mel spectrogram, not
+    # decoded segments.  Applying VAD here with TH-tuned defaults silently drops
+    # EN audio (lower speech energy, longer pauses) and produces duration=0.0,
+    # which then propagates as "no speech" even though audio is present.
     segments, info = model.transcribe(
         str(file_path),
         beam_size=beam_size,
         best_of=1,
-        vad_filter=True,
-        vad_parameters=_get_vad_parameters(),
+        vad_filter=False,
     )
-    
+    # Consume the generator so faster-whisper completes the forward pass
+    for _ in segments:
+        pass
+
     duration = round(info.duration, 2) if hasattr(info, "duration") else 0.0
-    if duration == 0.0:
-        logger.warning(
-            "No speech detected (duration=0.0) in %s — VAD filtered all audio",
-            file_path.name,
-        )
     return info.language, round(info.language_probability, 4), duration
 
 
