@@ -76,10 +76,18 @@ WHISPER_COMPRESSION_RATIO_THRESHOLD: float = 2.4
 WHISPER_LOG_PROB_THRESHOLD: float = -1.0
 # Mark chunk as no-speech when silence probability exceeds this
 WHISPER_NO_SPEECH_THRESHOLD: float = 0.6
+# When duration=0.0 and language probability < this, mark as no-speech
+WHISPER_NO_SPEECH_PROB_THRESHOLD: float = 0.55
+# Language code assigned to files with no detectable speech
+WHISPER_NO_SPEECH_LANG: str = "unknown"
 # Warn when language detection confidence is below this threshold
 WHISPER_LOW_CONFIDENCE_THRESHOLD: float = 0.5
 # Any word that accounts for more than this fraction of all words = hallucination
 WHISPER_HALLUCINATION_WORD_RATIO: float = 0.6
+# N-gram hallucination detection — catches phrase-level repetition loops
+WHISPER_HALLUCINATION_NGRAM_SIZE: int = 4
+# Minimum ratio of unique n-grams to total n-grams; below this = hallucination
+WHISPER_HALLUCINATION_NGRAM_RATIO: float = 0.4
 
 # ---------------------------------------------------------------------------
 # EN-specific transcription parameters
@@ -90,15 +98,14 @@ WHISPER_HALLUCINATION_WORD_RATIO: float = 0.6
 #   - Longer pauses between turns → no_speech_threshold too aggressive
 #   - Long calls benefit from carrying context across 30s chunks
 # ---------------------------------------------------------------------------
-# Re-enable context carry-over across 30s chunks (safe for EN, risky for TH loops)
-WHISPER_EN_CONDITION_ON_PREVIOUS_TEXT: bool = True
+# Disable context carry-over — noisy telephony audio causes error cascades across chunks
+WHISPER_EN_CONDITION_ON_PREVIOUS_TEXT: bool = False
 # No repetition penalty — EN naturally repeats connectors and filler words
 WHISPER_EN_REPETITION_PENALTY: float = 1.0
-# Disable n-gram blocking — "yes yes", "ok ok" are valid EN speech
-WHISPER_EN_NO_REPEAT_NGRAM_SIZE: int = 0
-# More lenient segment threshold — telephone EN (mixed-lang calls, accented speech)
-# scores lower on log_prob; -3.0 prevents dropping real speech segments
-WHISPER_EN_LOG_PROB_THRESHOLD: float = -3.0
+# Block 5-gram repetition — allows "yes yes", "ok ok" but catches longer loops
+WHISPER_EN_NO_REPEAT_NGRAM_SIZE: int = 5
+# Moderate segment threshold — drops garbled segments while keeping accented EN
+WHISPER_EN_LOG_PROB_THRESHOLD: float = -1.5
 # More lenient no-speech threshold — EN calls have longer pauses between turns
 WHISPER_EN_NO_SPEECH_THRESHOLD: float = 0.7
 # Slightly looser VAD threshold for EN — fewer false silence cuts during pauses
@@ -107,6 +114,20 @@ WHISPER_EN_VAD_THRESHOLD: float = 0.2
 WHISPER_EN_VAD_MIN_SILENCE_DURATION_MS: int = 500
 # EN speech is naturally more repetitive (filler words, backchannel) — allow higher ratio
 WHISPER_EN_COMPRESSION_RATIO_THRESHOLD: float = 3.0
+
+# Initial prompts — prime Whisper with domain-specific vocabulary for accurate decoding
+WHISPER_EN_INITIAL_PROMPT: str = (
+    "Emergency call center, Phuket Thailand. "
+    "Patong, Kathu, Cherng Talay, Kamala, Vachira Hospital, ambulance, "
+    "motorcycle accident, hotel, heritage."
+)
+WHISPER_TH_INITIAL_PROMPT: str = (
+    "ศูนย์รับแจ้งเหตุฉุกเฉิน ทองไข่มุก ภูเก็ต "
+    "ป่าตอง กะทู้ เชิงทะเล กมลา โรงพยาบาลวชิระ "
+    "รถพยาบาล อุบัติเหตุ มอเตอร์ไซค์ โรงแรม"
+)
+# Temperature fallback — retry with higher temperatures when segment quality is low
+WHISPER_TEMPERATURE_FALLBACK: list[float] = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
 
 CSV_FIELDNAMES: list[str] = [
     "file_name",

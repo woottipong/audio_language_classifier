@@ -15,7 +15,6 @@ project/
 │   └── ARCHITECTURE.md
 └── .breakdown/
     ├── STATUS.md
-    ├── task-template.md
     ├── task-001-<slug>.md
     └── task-002-<slug>.md
 ```

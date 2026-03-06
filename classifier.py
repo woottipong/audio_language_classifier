@@ -21,20 +21,27 @@ from constants import (
     WHISPER_COMPRESSION_RATIO_THRESHOLD,
     WHISPER_CONDITION_ON_PREVIOUS_TEXT,
     WHISPER_DETECTION_BEAM_SIZE,
+    WHISPER_EN_COMPRESSION_RATIO_THRESHOLD,
     WHISPER_EN_CONDITION_ON_PREVIOUS_TEXT,
+    WHISPER_EN_INITIAL_PROMPT,
     WHISPER_EN_LOG_PROB_THRESHOLD,
     WHISPER_EN_NO_REPEAT_NGRAM_SIZE,
     WHISPER_EN_NO_SPEECH_THRESHOLD,
     WHISPER_EN_REPETITION_PENALTY,
-    WHISPER_EN_COMPRESSION_RATIO_THRESHOLD,
     WHISPER_EN_VAD_MIN_SILENCE_DURATION_MS,
     WHISPER_EN_VAD_THRESHOLD,
+    WHISPER_HALLUCINATION_NGRAM_RATIO,
+    WHISPER_HALLUCINATION_NGRAM_SIZE,
     WHISPER_HALLUCINATION_WORD_RATIO,
     WHISPER_LOG_PROB_THRESHOLD,
     WHISPER_LOW_CONFIDENCE_THRESHOLD,
     WHISPER_NO_REPEAT_NGRAM_SIZE,
+    WHISPER_NO_SPEECH_LANG,
+    WHISPER_NO_SPEECH_PROB_THRESHOLD,
     WHISPER_NO_SPEECH_THRESHOLD,
     WHISPER_REPETITION_PENALTY,
+    WHISPER_TEMPERATURE_FALLBACK,
+    WHISPER_TH_INITIAL_PROMPT,
     WHISPER_TRANSCRIPTION_BEAM_SIZE,
 )
 from google_stt import transcribe_with_chirp
@@ -196,10 +203,10 @@ def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
 
     if duration == 0.0:
         logger.warning(
-            "No speech detected (duration=0.0) in %s — VAD filtered all audio, "
-            "transcription will be empty",
+            "No speech detected (duration=0.0) in %s — skipping transcription",
             file_path.name,
         )
+        return detected_lang, probability, duration, "", []
 
     if probability < WHISPER_LOW_CONFIDENCE_THRESHOLD:
         logger.warning(
@@ -222,11 +229,21 @@ def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
     no_speech_threshold = WHISPER_EN_NO_SPEECH_THRESHOLD if is_english else WHISPER_NO_SPEECH_THRESHOLD
     compression_ratio_threshold = WHISPER_EN_COMPRESSION_RATIO_THRESHOLD if is_english else WHISPER_COMPRESSION_RATIO_THRESHOLD
 
+    # Select initial prompt for domain-specific vocabulary hints
+    if is_english:
+        initial_prompt = WHISPER_EN_INITIAL_PROMPT
+    elif detected_lang == THAI_LANGUAGE_CODE:
+        initial_prompt = WHISPER_TH_INITIAL_PROMPT
+    else:
+        initial_prompt = ""
+
     beam_size = _get_adaptive_beam_size("transcription")
     segments, info = model.transcribe(
         str(file_path),
         language=detected_lang,
         beam_size=beam_size,
+        initial_prompt=initial_prompt,
+        temperature=WHISPER_TEMPERATURE_FALLBACK,
         condition_on_previous_text=condition_on_prev,
         repetition_penalty=repetition_penalty,
         no_repeat_ngram_size=no_repeat_ngram_size,
@@ -304,17 +321,35 @@ def _clean_transcription(text: str, lang: str) -> str:
 def _is_hallucination(text: str) -> bool:
     """Return True when the transcription is a repetition loop (Whisper hallucination).
 
-    Heuristic: if a single word accounts for more than WHISPER_HALLUCINATION_WORD_RATIO
-    of all words the output is almost certainly a Whisper loop, not real speech.
+    Two heuristics:
+    1. Single-word dominance — one word accounts for > WHISPER_HALLUCINATION_WORD_RATIO
+       of all words (catches single-token loops like "นี่นี่นี่").
+    2. N-gram uniqueness — if unique n-grams / total n-grams < WHISPER_HALLUCINATION_NGRAM_RATIO,
+       the output is a phrase-level loop (catches "going to the grocery store" repeated).
     """
     words = text.split()
     if len(words) < 10:
         return False
+
+    # Check 1: single-word dominance
     counts: dict[str, int] = {}
     for w in words:
         counts[w] = counts.get(w, 0) + 1
     max_count = max(counts.values())
-    return max_count / len(words) > WHISPER_HALLUCINATION_WORD_RATIO
+    if max_count / len(words) > WHISPER_HALLUCINATION_WORD_RATIO:
+        return True
+
+    # Check 2: n-gram uniqueness (phrase-level repetition)
+    n = WHISPER_HALLUCINATION_NGRAM_SIZE
+    if len(words) >= n * 2:
+        total = len(words) - n + 1
+        ngrams: set[str] = set()
+        for i in range(total):
+            ngrams.add(" ".join(words[i:i + n]))
+        if len(ngrams) / total < WHISPER_HALLUCINATION_NGRAM_RATIO:
+            return True
+
+    return False
 
 
 def detect_language(
@@ -343,7 +378,11 @@ def detect_language(
             detected_lang, probability, duration, transcription, segments_list = _transcribe_with_whisper(
                 file_path, model
             )
-            
+
+            # Override Whisper's default "en" for silent/empty files
+            if duration == 0.0 and probability < WHISPER_NO_SPEECH_PROB_THRESHOLD:
+                detected_lang = WHISPER_NO_SPEECH_LANG
+
             if detected_lang == THAI_LANGUAGE_CODE and use_google_for_thai:
                 # Use cached transcription and segments - no need to transcribe again!
                 # Pass duration to avoid ffprobe subprocess call
@@ -374,7 +413,11 @@ def detect_language(
             )
         else:
             detected_lang, probability, duration = _detect_language_only(file_path, model)
-            
+
+            # Override Whisper's default "en" for silent/empty files
+            if duration == 0.0 and probability < WHISPER_NO_SPEECH_PROB_THRESHOLD:
+                detected_lang = WHISPER_NO_SPEECH_LANG
+
             result = DetectionResult(
                 file_name=file_name,
                 detected_lang=detected_lang,
