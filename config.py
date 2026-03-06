@@ -37,7 +37,7 @@ class AppConfig:
     max_workers: int = DEFAULT_MAX_WORKERS
     enable_transcription: bool = False
     use_google_for_thai: bool = False
-    thai_model: str = ""
+    preprocess_audio: bool = False
     
     audio_extensions: list[str] = field(
         default_factory=lambda: SUPPORTED_AUDIO_EXTENSIONS.copy()

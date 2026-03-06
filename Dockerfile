@@ -42,19 +42,12 @@ RUN python3.11 -m ensurepip --upgrade || (curl -sS https://bootstrap.pypa.io/get
 
 # Symlink python/python3/pip to 3.11
 RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 \
-    && ln -sf /usr/bin/python3.11 /usr/bin/python \
-    && ln -sf /usr/local/bin/pip3.11 /usr/bin/pip || true
+ && ln -sf /usr/bin/python3.11 /usr/bin/python \
+ && ln -sf /usr/local/bin/pip3.11 /usr/bin/pip || true
 
 WORKDIR /app
 
-# Install torch with CUDA first — must precede requirements.txt so the CPU-only
-# PyPI wheel is not pulled in even transiently.  The index URL targets CUDA 12.1
-# which matches the base image (nvidia/cuda:12.1.1-*).  For CPU-only builds this
-# layer is still correct; torch will detect no CUDA at runtime and fall back.
-RUN python3.11 -m pip install --no-cache-dir \
-    torch --index-url https://download.pytorch.org/whl/cu121
-
-# Install remaining Python dependencies (torch already satisfied above)
+# Install Python dependencies first (layer caching)
 COPY requirements.txt .
 RUN python3.11 -m pip install --no-cache-dir -r requirements.txt
 
@@ -66,7 +59,7 @@ COPY storage/ ./storage/
 # Pre-download model into image (only when BAKE_MODEL is set)
 ARG BAKE_MODEL=""
 RUN if [ -n "$BAKE_MODEL" ]; then \
-    python3.11 -c "from faster_whisper import WhisperModel; WhisperModel('$BAKE_MODEL', device='cpu', compute_type='int8')"; \
+      python3.11 -c "from faster_whisper import WhisperModel; WhisperModel('$BAKE_MODEL', device='cpu', compute_type='int8')"; \
     fi
 
 # Default command

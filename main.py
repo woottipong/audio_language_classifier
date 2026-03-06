@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 
 from cache import ResultCache
-from classifier import detect_language, load_model, load_thai_model
+from classifier import detect_language, load_model
 from config import AppConfig
 from constants import DEFAULT_MODEL_SIZE
 from exporter import append_csv_row, export_csv, export_json
@@ -72,7 +72,7 @@ def parse_args() -> tuple[AppConfig, bool]:
     parser.add_argument("--max-workers", type=int, default=4, help="Number of concurrent workers")
     parser.add_argument("--transcribe", action="store_true", help="Enable full transcription of audio content")
     parser.add_argument("--use-google-for-thai", action="store_true", help="Use Google Cloud STT (Chirp 2) for Thai language transcription (requires GOOGLE_APPLICATION_CREDENTIALS)")
-    parser.add_argument("--thai-model", default="", help="HuggingFace model ID for Thai transcription (e.g. biodatlab/distill-whisper-th-large-v3)")
+    parser.add_argument("--preprocess-audio", action="store_true", help="Apply ffmpeg highpass+loudnorm preprocessing for noisy telephone audio")
     parser.add_argument("--log-level", default="INFO", help="Logging level")
     parser.add_argument("--log-file", default="", help="Optional log file path")
     
@@ -96,7 +96,7 @@ def parse_args() -> tuple[AppConfig, bool]:
         max_workers=args.max_workers,
         enable_transcription=args.transcribe,
         use_google_for_thai=args.use_google_for_thai,
-        thai_model=args.thai_model,
+        preprocess_audio=args.preprocess_audio,
         log_level=args.log_level,
         log_file=args.log_file,
         enable_cache=args.enable_cache,
@@ -127,8 +127,6 @@ def process_files(
     # Track model loading time
     with PerformanceTimer("Model loading") as timer:
         model = load_model(cfg.model_size, cfg.device, cfg.compute_type)
-        if cfg.thai_model:
-            load_thai_model(cfg.thai_model, cfg.device, cfg.compute_type)
     metrics.model_load_time = timer.get_elapsed()
     
     results: list[dict] = []
@@ -162,6 +160,7 @@ def process_files(
             model,
             cfg.enable_transcription,
             cfg.use_google_for_thai,
+            cfg.preprocess_audio,
         )
         
         # Cache result
@@ -255,8 +254,6 @@ def main() -> None:
     logger.info("Output: %s", cfg.output_dir)
     logger.info("Model:  %s (device=%s, compute=%s)", cfg.model_size, cfg.device, cfg.compute_type)
     logger.info("Workers: %d | Max duration: %ds | Transcription: %s | Google Thai: %s", cfg.max_workers, cfg.max_duration, cfg.enable_transcription, cfg.use_google_for_thai)
-    if cfg.thai_model:
-        logger.info("Thai model: %s", cfg.thai_model)
     
     if cfg.enable_cache:
         logger.info("Cache: enabled (dir=%s, ttl=%dh)", cfg.cache_dir, cfg.cache_ttl_hours)
