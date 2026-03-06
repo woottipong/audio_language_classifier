@@ -43,6 +43,9 @@ python main.py -i ./audio_files -o ./results --enable-cache
 
 # GPU (ถ้ามี CUDA)
 python main.py -i ./audio_files -o ./results --device cuda --compute-type float16
+
+# GPU + large-v3-turbo (เร็วกว่า large ~4x, accuracy ใกล้เคียง)
+python main.py -i ./audio_files -o ./results --transcribe --device cuda --compute-type float16 --model-size large-v3-turbo
 ```
 
 ผลลัพธ์จะอยู่ที่ `./results/summary.csv` และ `./results/summary.json`
@@ -53,7 +56,7 @@ python main.py -i ./audio_files -o ./results --device cuda --compute-type float1
 |------|---------|-------------|
 | `-i, --input` | `./audio_files` | โฟลเดอร์ไฟล์เสียง |
 | `-o, --output` | `./results` | โฟลเดอร์ output |
-| `--model-size` | `base` | `tiny` / `base` / `small` / `medium` / `large` |
+| `--model-size` | `base` | `tiny` / `base` / `small` / `medium` / `large` / `large-v3-turbo` / `turbo` |
 | `--device` | `auto` | `auto` / `cpu` / `cuda` |
 | `--compute-type` | `int8` | `int8` / `float16` / `float32` |
 | `--max-duration` | `30` | วินาทีที่อ่านต่อไฟล์ (สำหรับ detection) |

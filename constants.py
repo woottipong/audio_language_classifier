@@ -59,6 +59,8 @@ ADAPTIVE_BEAM_SIZES: dict[str, dict[str, int]] = {
     "large": {"detection": 1, "transcription": 7},
     "large-v2": {"detection": 1, "transcription": 7},
     "large-v3": {"detection": 1, "transcription": 7},
+    "large-v3-turbo": {"detection": 1, "transcription": 7},
+    "turbo": {"detection": 1, "transcription": 7},
 }
 
 VAD_THRESHOLD: float = 0.3
