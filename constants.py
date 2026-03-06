@@ -119,12 +119,19 @@ WHISPER_EN_VAD_MIN_SILENCE_DURATION_MS: int = 500
 # EN speech is naturally more repetitive (filler words, backchannel) — allow higher ratio
 WHISPER_EN_COMPRESSION_RATIO_THRESHOLD: float = 3.0
 
-# Initial prompts — prime Whisper with domain-specific vocabulary for accurate decoding
+# Initial prompts — prime Whisper with domain-specific vocabulary for accurate decoding.
+# Use natural sentence form (not a keyword list): a bare keyword list is trivial for
+# Whisper to echo verbatim when there is no clear speech, causing prompt hallucinations.
 WHISPER_EN_INITIAL_PROMPT: str = (
-    "Emergency call center, Phuket Thailand. "
-    "Patong, Kathu, Cherng Talay, Kamala, Vachira Hospital, ambulance, "
-    "motorcycle accident, hotel, heritage."
+    "Hello, I need an ambulance. "
+    "There's been a motorcycle accident near Patong, Phuket. "
+    "Please send help to Vachira Hospital. "
+    "Cherng Talay, Kathu, Kamala."
 )
+# Minimum EN detection probability to attempt transcription.
+# Below this threshold, the file is likely misdetected Thai/silence and
+# the EN initial_prompt causes vocabulary hallucinations instead of real output.
+WHISPER_EN_TRANSCRIPTION_MIN_PROB: float = 0.40
 WHISPER_TH_INITIAL_PROMPT: str = (
     "ศูนย์รับแจ้งเหตุฉุกเฉิน ทองไข่มุก ภูเก็ต "
     "ป่าตอง กะทู้ เชิงทะเล กมลา โรงพยาบาลวชิระ "

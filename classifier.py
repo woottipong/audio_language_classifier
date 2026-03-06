@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,6 +45,7 @@ from constants import (
     WHISPER_TEMPERATURE_FALLBACK,
     WHISPER_TH_INITIAL_PROMPT,
     WHISPER_CPU_THREADS,
+    WHISPER_EN_TRANSCRIPTION_MIN_PROB,
     WHISPER_TRANSCRIPTION_BEAM_SIZE,
 )
 from google_stt import transcribe_with_chirp
@@ -230,6 +232,17 @@ def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
         )
         return detected_lang, probability, duration, "", []
 
+    # Skip transcription for very low-confidence EN detections — low-prob EN is usually
+    # misdetected Thai/silence and the EN initial_prompt causes vocabulary hallucinations.
+    if detected_lang == ENGLISH_LANGUAGE_CODE and probability < WHISPER_EN_TRANSCRIPTION_MIN_PROB:
+        logger.info(
+            "Skipping EN transcription for %s: prob=%.4f below minimum threshold %.2f",
+            file_path.name,
+            probability,
+            WHISPER_EN_TRANSCRIPTION_MIN_PROB,
+        )
+        return detected_lang, probability, duration, "", []
+
     if probability < WHISPER_LOW_CONFIDENCE_THRESHOLD:
         logger.warning(
             "Low language-detection confidence for %s: lang=%s prob=%.4f — "
@@ -349,7 +362,11 @@ def _is_hallucination(text: str) -> bool:
     2. N-gram uniqueness — if unique n-grams / total n-grams < WHISPER_HALLUCINATION_NGRAM_RATIO,
        the output is a phrase-level loop (catches "going to the grocery store" repeated).
     """
-    words = text.split()
+    # Normalise: lowercase + strip punctuation so "Phuket," and "Phuket." and "Phuket"
+    # are counted as the same token (punctuation inflation was causing phrase loops to
+    # register as unique and pass through the hallucination filter).
+    normalized = re.sub(r"[^\w\s]", "", text.lower())
+    words = normalized.split()
     if len(words) < 10:
         return False
 
