@@ -5,12 +5,20 @@
 # Build:
 #   GPU:  docker build -t audio-classifier .
 #   CPU:  docker build --build-arg BASE_IMAGE=python:3.11-slim -t audio-classifier .
+#   Bake model into image (no download on each run):
+#         docker build --build-arg BAKE_MODEL=large-v3-turbo -t audio-classifier .
 #
-# Run:
-#   docker run --rm -v ./audio_files:/app/audio_files -v ./results:/app/results audio-classifier
+# Run (model cache persisted on host — recommended):
+#   GPU:  docker run --rm --gpus all \
+#           -v $(pwd)/model_cache:/root/.cache/huggingface \
+#           -v $(pwd)/audio_files:/data/input \
+#           -v $(pwd)/results:/data/output \
+#           audio-classifier -i /data/input -o /data/output --device cuda --compute-type float16
 # ============================================================
 
 ARG BASE_IMAGE=nvidia/cuda:12.1.1-runtime-ubuntu22.04
+# Set to a model name (e.g. large-v3-turbo) to bake the model into the image
+ARG BAKE_MODEL=""
 
 FROM ${BASE_IMAGE}
 
@@ -47,6 +55,12 @@ RUN python3.11 -m pip install --no-cache-dir -r requirements.txt
 COPY constants.py exceptions.py config.py utils.py ./
 COPY classifier.py google_stt.py cache.py performance.py exporter.py main.py ./
 COPY storage/ ./storage/
+
+# Pre-download model into image (only when BAKE_MODEL is set)
+ARG BAKE_MODEL=""
+RUN if [ -n "$BAKE_MODEL" ]; then \
+      python3.11 -c "from faster_whisper import WhisperModel; WhisperModel('$BAKE_MODEL', device='cpu', compute_type='int8')"; \
+    fi
 
 # Default command
 ENTRYPOINT ["python", "main.py"]
