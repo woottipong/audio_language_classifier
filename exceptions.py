@@ -34,8 +34,3 @@ class FileSizeError(AudioClassifierError):
 class AudioProcessingError(AudioClassifierError):
     """Raised when audio processing fails."""
     pass
-
-
-class ModelLoadError(AudioClassifierError):
-    """Raised when a model cannot be loaded or converted to CTranslate2 format."""
-    pass

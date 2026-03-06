@@ -1,4 +1,4 @@
-"""Unit tests for classifier.py — DetectionResult, beam sizes, VAD, load_model, Thai model."""
+"""Unit tests for classifier.py — DetectionResult, beam sizes, VAD, load_model."""
 
 from __future__ import annotations
 
@@ -9,13 +9,10 @@ import pytest
 
 from classifier import (
     DetectionResult,
-    _ensure_ct2_model,
     _get_adaptive_beam_size,
     _get_vad_parameters,
     load_model,
-    load_thai_model,
 )
-from exceptions import ModelLoadError
 from constants import (
     ADAPTIVE_BEAM_SIZES,
     WHISPER_DETECTION_BEAM_SIZE,
@@ -144,128 +141,3 @@ class TestLoadModel:
             r2 = load_model("base", "cpu", "int8")
             assert MockModel.call_count == 1
             assert r1 is r2
-
-
-class TestEnsureCt2Model:
-    """Tests for _ensure_ct2_model() — format detection and auto-conversion."""
-
-    def test_local_ct2_path_returned_unchanged(self, tmp_path: Path) -> None:
-        model_dir = tmp_path / "my_model"
-        model_dir.mkdir()
-        (model_dir / "model.bin").write_bytes(b"")
-        result = _ensure_ct2_model(str(model_dir), "int8")
-        assert result == str(model_dir)
-
-    def test_local_path_without_model_bin_raises(self, tmp_path: Path) -> None:
-        model_dir = tmp_path / "hf_model"
-        model_dir.mkdir()
-        (model_dir / "pytorch_model.bin").write_bytes(b"")
-        with pytest.raises(ModelLoadError, match="no model.bin"):
-            _ensure_ct2_model(str(model_dir), "int8")
-
-    def test_hf_id_returns_cached_ct2_if_exists(self, tmp_path: Path) -> None:
-        ct2_dir = tmp_path / "ct2" / "org--model"
-        ct2_dir.mkdir(parents=True)
-        (ct2_dir / "model.bin").write_bytes(b"")
-        with patch.dict("os.environ", {"HF_HOME": str(tmp_path)}, clear=False):
-            result = _ensure_ct2_model("org/model", "int8")
-        assert result == str(ct2_dir)
-
-    def test_hf_id_uses_existing_ct2_snapshot(self, tmp_path: Path) -> None:
-        """If the converted CT2 model doesn't exist in cache yet, the converter is called."""
-        # This test just verifies the no-cache path triggers TransformersConverter
-        mock_converter = MagicMock()
-        with patch.dict("os.environ", {"HF_HOME": str(tmp_path)}, clear=False):
-            with patch("ctranslate2.converters.TransformersConverter", return_value=mock_converter):
-                _ensure_ct2_model("org/already-ct2", "int8")
-        mock_converter.convert.assert_called_once()
-
-    def test_hf_id_converts_transformers_model(self, tmp_path: Path) -> None:
-        """HF model should be converted via TransformersConverter and CT2 path returned."""
-        mock_converter = MagicMock()
-
-        with patch.dict("os.environ", {"HF_HOME": str(tmp_path)}, clear=False):
-            with patch("ctranslate2.converters.TransformersConverter", return_value=mock_converter) as MockConverter:
-                result = _ensure_ct2_model("org/th-model", "float16")
-
-        MockConverter.assert_called_once_with("org/th-model")
-        mock_converter.convert.assert_called_once()
-        convert_args, convert_kwargs = mock_converter.convert.call_args
-        used_quant = convert_kwargs.get("quantization") or (convert_args[1] if len(convert_args) > 1 else None)
-        assert used_quant == "float16"
-        assert "ct2" in result
-        assert "org--th-model" in result
-
-    def test_conversion_exception_raises_model_load_error(self, tmp_path: Path) -> None:
-        broken_converter = MagicMock()
-        broken_converter.convert.side_effect = RuntimeError("Bad weights")
-
-        with patch.dict("os.environ", {"HF_HOME": str(tmp_path)}, clear=False):
-            with patch("ctranslate2.converters.TransformersConverter", return_value=broken_converter):
-                with pytest.raises(ModelLoadError, match="Failed to convert"):
-                    _ensure_ct2_model("org/broken", "int8")
-
-    def test_download_failure_raises_model_load_error(self, tmp_path: Path) -> None:
-        """TransformersConverter raising during convert is wrapped as ModelLoadError."""
-        failing_converter = MagicMock()
-        failing_converter.convert.side_effect = OSError("network")
-
-        with patch.dict("os.environ", {"HF_HOME": str(tmp_path)}, clear=False):
-            with patch("ctranslate2.converters.TransformersConverter", return_value=failing_converter):
-                with pytest.raises(ModelLoadError, match="Failed to convert"):
-                    _ensure_ct2_model("org/missing", "int8")
-
-    def test_unknown_quantization_falls_back_to_int8(self, tmp_path: Path) -> None:
-        mock_converter = MagicMock()
-
-        with patch.dict("os.environ", {"HF_HOME": str(tmp_path)}, clear=False):
-            with patch("ctranslate2.converters.TransformersConverter", return_value=mock_converter):
-                _ensure_ct2_model("org/model", "bfloat16")  # unsupported → int8
-
-        convert_args, convert_kwargs = mock_converter.convert.call_args
-        used_quant = convert_kwargs.get("quantization") or (convert_args[1] if len(convert_args) > 1 else None)
-        assert used_quant == "int8"
-
-
-class TestLoadThaiModel:
-    def setup_method(self) -> None:
-        import classifier
-        classifier._thai_model = None
-
-    def teardown_method(self) -> None:
-        import classifier
-        classifier._thai_model = None
-
-    def test_loads_from_ct2_path(self, tmp_path: Path) -> None:
-        ct2_dir = tmp_path / "model"
-        ct2_dir.mkdir()
-        (ct2_dir / "model.bin").write_bytes(b"")
-
-        mock_model = MagicMock()
-        with patch("classifier.WhisperModel", return_value=mock_model) as MockModel:
-            result = load_thai_model(str(ct2_dir), "cpu", "int8")
-        MockModel.assert_called_once_with(
-            str(ct2_dir), device="cpu", compute_type="int8", cpu_threads=4
-        )
-        assert result is mock_model
-
-    def test_returns_cached_model_on_second_call(self, tmp_path: Path) -> None:
-        ct2_dir = tmp_path / "model"
-        ct2_dir.mkdir()
-        (ct2_dir / "model.bin").write_bytes(b"")
-
-        mock_model = MagicMock()
-        with patch("classifier.WhisperModel", return_value=mock_model) as MockModel:
-            r1 = load_thai_model(str(ct2_dir), "cpu", "int8")
-            r2 = load_thai_model(str(ct2_dir), "cpu", "int8")
-        assert MockModel.call_count == 1
-        assert r1 is r2
-
-    def test_hf_model_triggers_conversion(self, tmp_path: Path) -> None:
-        """load_thai_model should call _ensure_ct2_model for an HF model ID."""
-        fake_ct2_path = str(tmp_path / "converted")
-        mock_model = MagicMock()
-        with patch("classifier._ensure_ct2_model", return_value=fake_ct2_path) as mock_ensure:
-            with patch("classifier.WhisperModel", return_value=mock_model):
-                load_thai_model("org/th-model", "cpu", "int8")
-        mock_ensure.assert_called_once_with("org/th-model", "int8")
