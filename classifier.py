@@ -21,6 +21,13 @@ from constants import (
     WHISPER_COMPRESSION_RATIO_THRESHOLD,
     WHISPER_CONDITION_ON_PREVIOUS_TEXT,
     WHISPER_DETECTION_BEAM_SIZE,
+    WHISPER_EN_CONDITION_ON_PREVIOUS_TEXT,
+    WHISPER_EN_LOG_PROB_THRESHOLD,
+    WHISPER_EN_NO_REPEAT_NGRAM_SIZE,
+    WHISPER_EN_NO_SPEECH_THRESHOLD,
+    WHISPER_EN_REPETITION_PENALTY,
+    WHISPER_EN_VAD_MIN_SILENCE_DURATION_MS,
+    WHISPER_EN_VAD_THRESHOLD,
     WHISPER_HALLUCINATION_WORD_RATIO,
     WHISPER_LOG_PROB_THRESHOLD,
     WHISPER_LOW_CONFIDENCE_THRESHOLD,
@@ -106,12 +113,24 @@ def _get_adaptive_beam_size(mode: str) -> int:
         return WHISPER_TRANSCRIPTION_BEAM_SIZE
 
 
-def _get_vad_parameters() -> dict:
+def _get_vad_parameters(lang: str = "") -> dict:
     """Get VAD (Voice Activity Detection) parameters.
-    
+
+    EN uses a looser threshold and shorter min-silence to avoid cutting
+    mid-sentence pauses that are common in phone conversation.
+
+    Args:
+        lang: Detected language code (e.g. "en", "th"). Empty string = default.
+
     Returns:
         Dictionary of VAD parameters
     """
+    if lang == ENGLISH_LANGUAGE_CODE:
+        return {
+            "threshold": WHISPER_EN_VAD_THRESHOLD,
+            "min_speech_duration_ms": VAD_MIN_SPEECH_DURATION_MS,
+            "min_silence_duration_ms": WHISPER_EN_VAD_MIN_SILENCE_DURATION_MS,
+        }
     return {
         "threshold": VAD_THRESHOLD,
         "min_speech_duration_ms": VAD_MIN_SPEECH_DURATION_MS,
@@ -168,6 +187,13 @@ def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
         file_path.name,
     )
 
+    if duration == 0.0:
+        logger.warning(
+            "No speech detected (duration=0.0) in %s — VAD filtered all audio, "
+            "transcription will be empty",
+            file_path.name,
+        )
+
     if probability < WHISPER_LOW_CONFIDENCE_THRESHOLD:
         logger.warning(
             "Low language-detection confidence for %s: lang=%s prob=%.4f — "
@@ -177,26 +203,30 @@ def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
             probability,
         )
 
-    # --- Pass 2: transcribe with confirmed language hint + anti-hallucination params ---
+    # --- Pass 2: transcribe with confirmed language hint ---
+    # Select parameter set based on detected language:
+    # EN uses lenient params — conversation speech has natural repetition and pauses.
+    # All other languages use the default TH-tuned anti-hallucination params.
+    is_english = detected_lang == ENGLISH_LANGUAGE_CODE
+    condition_on_prev = WHISPER_EN_CONDITION_ON_PREVIOUS_TEXT if is_english else WHISPER_CONDITION_ON_PREVIOUS_TEXT
+    repetition_penalty = WHISPER_EN_REPETITION_PENALTY if is_english else WHISPER_REPETITION_PENALTY
+    no_repeat_ngram_size = WHISPER_EN_NO_REPEAT_NGRAM_SIZE if is_english else WHISPER_NO_REPEAT_NGRAM_SIZE
+    log_prob_threshold = WHISPER_EN_LOG_PROB_THRESHOLD if is_english else WHISPER_LOG_PROB_THRESHOLD
+    no_speech_threshold = WHISPER_EN_NO_SPEECH_THRESHOLD if is_english else WHISPER_NO_SPEECH_THRESHOLD
+
     beam_size = _get_adaptive_beam_size("transcription")
     segments, info = model.transcribe(
         str(file_path),
         language=detected_lang,
         beam_size=beam_size,
-        # Break cascade: do NOT feed previous chunk output as prompt for next chunk
-        condition_on_previous_text=WHISPER_CONDITION_ON_PREVIOUS_TEXT,
-        # Penalise recently generated tokens to suppress repetition loops
-        repetition_penalty=WHISPER_REPETITION_PENALTY,
-        # Prevent any 3-gram from repeating inside a single chunk
-        no_repeat_ngram_size=WHISPER_NO_REPEAT_NGRAM_SIZE,
-        # Discard segments whose output is too compressible (too repetitive)
+        condition_on_previous_text=condition_on_prev,
+        repetition_penalty=repetition_penalty,
+        no_repeat_ngram_size=no_repeat_ngram_size,
         compression_ratio_threshold=WHISPER_COMPRESSION_RATIO_THRESHOLD,
-        # Discard low-confidence segments
-        log_prob_threshold=WHISPER_LOG_PROB_THRESHOLD,
-        # Mark chunk as no-speech when silence probability is high
-        no_speech_threshold=WHISPER_NO_SPEECH_THRESHOLD,
+        log_prob_threshold=log_prob_threshold,
+        no_speech_threshold=no_speech_threshold,
         vad_filter=True,
-        vad_parameters=_get_vad_parameters(),
+        vad_parameters=_get_vad_parameters(detected_lang),
     )
 
     # Use detection-pass values (more reliable; info here may differ slightly)

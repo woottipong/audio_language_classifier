@@ -83,6 +83,30 @@ WHISPER_LOW_CONFIDENCE_THRESHOLD: float = 0.5
 # Any word that accounts for more than this fraction of all words = hallucination
 WHISPER_HALLUCINATION_WORD_RATIO: float = 0.6
 
+# ---------------------------------------------------------------------------
+# EN-specific transcription parameters
+# EN conversation speech differs from TH in key ways:
+#   - Naturally repeats phrases ("yes yes", "ok ok") → ngram penalty breaks it
+#   - Common words (the, and, yes) penalised by repetition_penalty → gaps in output
+#   - log_prob is lower on base/small models for accented EN → segments dropped
+#   - Longer pauses between turns → no_speech_threshold too aggressive
+#   - Long calls benefit from carrying context across 30s chunks
+# ---------------------------------------------------------------------------
+# Re-enable context carry-over across 30s chunks (safe for EN, risky for TH loops)
+WHISPER_EN_CONDITION_ON_PREVIOUS_TEXT: bool = True
+# No repetition penalty — EN naturally repeats connectors and filler words
+WHISPER_EN_REPETITION_PENALTY: float = 1.0
+# Disable n-gram blocking — "yes yes", "ok ok" are valid EN speech
+WHISPER_EN_NO_REPEAT_NGRAM_SIZE: int = 0
+# More lenient segment threshold — base/small models score EN accents lower
+WHISPER_EN_LOG_PROB_THRESHOLD: float = -2.0
+# More lenient no-speech threshold — EN calls have longer pauses between turns
+WHISPER_EN_NO_SPEECH_THRESHOLD: float = 0.7
+# Slightly looser VAD threshold for EN — fewer false silence cuts during pauses
+WHISPER_EN_VAD_THRESHOLD: float = 0.2
+# Shorter min silence to avoid cutting mid-sentence pauses in EN conversation
+WHISPER_EN_VAD_MIN_SILENCE_DURATION_MS: int = 500
+
 CSV_FIELDNAMES: list[str] = [
     "file_name",
     "detected_lang",

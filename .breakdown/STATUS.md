@@ -17,15 +17,16 @@ Phase 2 — Enhancement & Hardening
 - [ ] Epic 7: Cloud Storage Backends
 - [x] Epic 8: Testing & Quality
 - [ ] Epic 9: Observability & Monitoring
+- [ ] Epic 10: English Transcription Quality
 
 **Overall: ~80% complete** (MVP done + full test suite, enhancement phase)
 
 ## Current Priorities
 
-1. **high** — Cloud storage backend (GCS/MinIO) — interface พร้อมแล้ว ขาด implementation
-2. **high** — Cloud storage backend (GCS/MinIO) — interface พร้อมแล้ว ขาด implementation
-3. **medium** — Error handling audit (ตรวจ edge cases ทั้งหมด)
-4. **medium** — CI/CD pipeline setup
+1. **medium** — Cloud storage backend (GCS/MinIO) — interface พร้อมแล้ว ขาด implementation
+2. **low** — Structured logging + metrics export (task-015)
+3. **low** — Performance benchmarking documentation
+4. **medium** — Cloud storage backend (GCS/MinIO) — interface พร้อมแล้ว ขาด implementation
 5. **low** — Performance benchmarking documentation
 
 ## Blockers
@@ -45,6 +46,7 @@ Phase 2 — Enhancement & Hardening
 | E7 | Cloud Storage Backends | todo | task-012 |
 | E8 | Testing & Quality | done | task-013, task-014 |
 | E9 | Observability & Monitoring | todo | task-015 |
+| E10 | English Transcription Quality | done | task-016, task-017, task-018 |
 
 ## Task Index
 
@@ -65,6 +67,9 @@ Phase 2 — Enhancement & Hardening
 | task-013 | Unit tests — core modules | E8 | done | high |
 | task-014 | Integration tests — end-to-end | E8 | done | high |
 | task-015 | Structured logging + metrics export | E9 | todo | low |
+| task-016 | EN-specific transcription constants | E10 | done | high |
+| task-017 | Language-aware transcription parameters | E10 | done | high |
+| task-018 | Warning log for silent/empty audio files | E10 | done | medium |
 
 ## Definition of Done
 
