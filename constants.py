@@ -38,8 +38,7 @@ WHISPER_BASE_MODEL: str = "base"
 WHISPER_SMALL_MODEL: str = "small"
 WHISPER_MEDIUM_MODEL: str = "medium"
 WHISPER_LARGE_MODEL: str = "large"
-DEFAULT_MAX_DURATION: int = 30
-DEFAULT_MAX_WORKERS: int = 2
+DEFAULT_MAX_WORKERS: int = 4
 DEFAULT_LOG_LEVEL: str = "INFO"
 
 # Cache configuration

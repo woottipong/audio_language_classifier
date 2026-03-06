@@ -436,7 +436,6 @@ def _is_hallucination(text: str) -> bool:
 
 def detect_language(
     file_path: Path,
-    max_duration: int,
     model: WhisperModel,
     enable_transcription: bool = False,
     use_google_for_thai: bool = False,
@@ -446,7 +445,6 @@ def detect_language(
 
     Args:
         file_path: Path to the audio file
-        max_duration: Maximum duration to read (ignored if enable_transcription=True)
         model: Loaded WhisperModel instance
         enable_transcription: If True, transcribe entire audio; if False, quick detection only
         use_google_for_thai: If True, use Google Chirp 2 for Thai transcription

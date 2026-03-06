@@ -61,11 +61,6 @@ class TestAppConfigValidation:
         with pytest.raises(ConfigurationError, match="max_workers"):
             cfg.validate()
 
-    def test_max_duration_zero(self, audio_dir: Path) -> None:
-        cfg = AppConfig(input_path=str(audio_dir), max_duration=0)
-        with pytest.raises(ConfigurationError, match="max_duration"):
-            cfg.validate()
-
     def test_invalid_device(self, audio_dir: Path) -> None:
         cfg = AppConfig(input_path=str(audio_dir), device="gpu")
         with pytest.raises(ConfigurationError, match="device"):

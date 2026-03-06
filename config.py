@@ -13,7 +13,6 @@ from constants import (
     DEFAULT_COMPUTE_TYPE,
     DEFAULT_DEVICE,
     DEFAULT_LOG_LEVEL,
-    DEFAULT_MAX_DURATION,
     DEFAULT_MAX_WORKERS,
     DEFAULT_MODEL_SIZE,
     SUPPORTED_AUDIO_EXTENSIONS,
@@ -33,7 +32,6 @@ class AppConfig:
     device: str = DEFAULT_DEVICE
     compute_type: str = DEFAULT_COMPUTE_TYPE
     
-    max_duration: int = DEFAULT_MAX_DURATION
     max_workers: int = DEFAULT_MAX_WORKERS
     enable_transcription: bool = False
     use_google_for_thai: bool = False
@@ -68,9 +66,6 @@ class AppConfig:
         
         if self.max_workers < 1:
             raise ConfigurationError(f"max_workers must be >= 1, got {self.max_workers}")
-        
-        if self.max_duration < 1:
-            raise ConfigurationError(f"max_duration must be >= 1, got {self.max_duration}")
         
         valid_devices = ["auto", "cpu", "cuda"]
         if self.device not in valid_devices:

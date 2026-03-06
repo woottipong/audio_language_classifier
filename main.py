@@ -58,7 +58,7 @@ def setup_logging(level: str, log_file: str = "") -> None:
 # CLI argument parser
 # ---------------------------------------------------------------------------
 
-def parse_args() -> tuple[AppConfig, bool]:
+def parse_args() -> AppConfig:
     """Parse CLI arguments and return an AppConfig."""
     parser = argparse.ArgumentParser(
         description="Detect language of audio files and export summary.",
@@ -68,7 +68,6 @@ def parse_args() -> tuple[AppConfig, bool]:
     parser.add_argument("--model-size", default=DEFAULT_MODEL_SIZE, help="Model size (default: base, or tiny/small/medium/large/large-v3-turbo/turbo)")
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"], help="Compute device")
     parser.add_argument("--compute-type", default="int8", help="Model compute type (int8/float16/float32)")
-    parser.add_argument("--max-duration", type=int, default=30, help="Max seconds to read per file")
     parser.add_argument("--max-workers", type=int, default=4, help="Number of concurrent workers")
     parser.add_argument("--transcribe", action="store_true", help="Enable full transcription of audio content")
     parser.add_argument("--use-google-for-thai", action="store_true", help="Use Google Cloud STT (Chirp 2) for Thai language transcription (requires GOOGLE_APPLICATION_CREDENTIALS)")
@@ -78,10 +77,7 @@ def parse_args() -> tuple[AppConfig, bool]:
     
     # Cache options
     parser.add_argument("--enable-cache", action="store_true", help="Enable result caching (skip re-processing unchanged files)")
-    parser.add_argument("--cache-dir", default="./.cache", help="Cache directory path")
-    parser.add_argument("--cache-ttl", type=int, default=24, help="Cache TTL in hours")
-    parser.add_argument("--clear-cache", action="store_true", help="Clear cache before processing")
-    
+
     # Performance options (removed --show-timing, always show performance summary)
 
     args = parser.parse_args()
@@ -92,7 +88,6 @@ def parse_args() -> tuple[AppConfig, bool]:
         model_size=args.model_size,
         device=args.device,
         compute_type=args.compute_type,
-        max_duration=args.max_duration,
         max_workers=args.max_workers,
         enable_transcription=args.transcribe,
         use_google_for_thai=args.use_google_for_thai,
@@ -100,10 +95,8 @@ def parse_args() -> tuple[AppConfig, bool]:
         log_level=args.log_level,
         log_file=args.log_file,
         enable_cache=args.enable_cache,
-        cache_dir=args.cache_dir,
-        cache_ttl_hours=args.cache_ttl,
         show_timing=True,  # Always show performance summary
-    ), args.clear_cache
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +149,6 @@ def process_files(
         # Process file
         result = detect_language(
             file_path,
-            cfg.max_duration,
             model,
             cfg.enable_transcription,
             cfg.use_google_for_thai,
@@ -235,7 +227,7 @@ def process_files(
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    cfg, clear_cache = parse_args()
+    cfg = parse_args()
     setup_logging(cfg.log_level, cfg.log_file)
     
     # Initialize performance metrics
@@ -253,7 +245,7 @@ def main() -> None:
     logger.info("Input:  %s", cfg.input_path)
     logger.info("Output: %s", cfg.output_dir)
     logger.info("Model:  %s (device=%s, compute=%s)", cfg.model_size, cfg.device, cfg.compute_type)
-    logger.info("Workers: %d | Max duration: %ds | Transcription: %s | Google Thai: %s", cfg.max_workers, cfg.max_duration, cfg.enable_transcription, cfg.use_google_for_thai)
+    logger.info("Workers: %d | Transcription: %s | Google Thai: %s", cfg.max_workers, cfg.enable_transcription, cfg.use_google_for_thai)
     
     if cfg.enable_cache:
         logger.info("Cache: enabled (dir=%s, ttl=%dh)", cfg.cache_dir, cfg.cache_ttl_hours)
@@ -263,12 +255,8 @@ def main() -> None:
         cache = None
         if cfg.enable_cache:
             cache = ResultCache(Path(cfg.cache_dir), cfg.cache_ttl_hours)
-            if clear_cache:
-                cleared = cache.clear_all()
-                logger.info("Cleared cache: %d entries", cleared)
-            else:
-                stats = cache.get_stats()
-                logger.info("Cache stats: %d entries, %s MB", stats['total_entries'], stats['total_size_mb'])
+            stats = cache.get_stats()
+            logger.info("Cache stats: %d entries, %s MB", stats['total_entries'], stats['total_size_mb'])
         
         storage = LocalStorage(cfg.input_path, cfg.audio_extensions)
         file_paths = storage.list_audio_files()
