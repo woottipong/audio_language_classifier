@@ -107,6 +107,22 @@ WHISPER_EN_VAD_MIN_SILENCE_DURATION_MS: int = 500
 # EN speech is naturally more repetitive (filler words, backchannel) — allow higher ratio
 WHISPER_EN_COMPRESSION_RATIO_THRESHOLD: float = 3.0
 
+# ---------------------------------------------------------------------------
+# Initial prompts — seed Whisper's context window before transcription begins.
+# Helps on noisy telephone audio (8kHz codec) by:
+#   - Biasing vocabulary toward call-center domain terms
+#   - Reducing hallucination on low-SNR segments
+#   - Setting script/punctuation style expectations
+# Keep under ~50 tokens (longer prompts eat into the 30s context window).
+# ---------------------------------------------------------------------------
+WHISPER_INITIAL_PROMPT_TH: str = (
+    "บันทึกเสียงสายโทรศัพท์ศูนย์รับแจ้งเหตุฉุกเฉิน ผู้แจ้งเหตุ เจ้าหน้าที่ ชื่อ ที่อยู่ อาการ"
+)
+WHISPER_INITIAL_PROMPT_EN: str = (
+    "Emergency call center recording. Caller reports incident. "
+    "Address, name, symptoms, ambulance, police."
+)
+
 CSV_FIELDNAMES: list[str] = [
     "file_name",
     "detected_lang",
