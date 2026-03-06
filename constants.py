@@ -87,8 +87,9 @@ WHISPER_NO_SPEECH_LANG: str = "unknown"
 # Warn when language detection confidence is below this threshold
 WHISPER_LOW_CONFIDENCE_THRESHOLD: float = 0.5
 # Languages outside TH/EN with prob below this are treated as hallucination
-# (Whisper often outputs vi/ja/ko YouTube training data on silent 8kHz audio)
-WHISPER_UNEXPECTED_LANG_PROB_THRESHOLD: float = 0.7
+# (Whisper often outputs vi/ja/ko/id YouTube training data on silent 8kHz audio)
+# Set to 0.8 because vi hallucinations reach prob ≈ 0.76
+WHISPER_UNEXPECTED_LANG_PROB_THRESHOLD: float = 0.8
 # Any word that accounts for more than this fraction of all words = hallucination
 WHISPER_HALLUCINATION_WORD_RATIO: float = 0.6
 # N-gram hallucination detection — catches phrase-level repetition loops
@@ -111,11 +112,13 @@ WHISPER_EN_CONDITION_ON_PREVIOUS_TEXT: bool = False
 WHISPER_EN_REPETITION_PENALTY: float = 1.0
 # Block 5-gram repetition — allows "yes yes", "ok ok" but catches longer loops
 WHISPER_EN_NO_REPEAT_NGRAM_SIZE: int = 5
-# Lenient segment threshold for 8kHz telephone audio — accented EN on low-bitrate
-# codecs produces lower log-probs; -1.5 drops valid speech, -2.5 keeps it
-WHISPER_EN_LOG_PROB_THRESHOLD: float = -2.5
+# Disable log-prob filtering for EN on 8kHz telephone audio.
+# Even -2.5 drops valid speech — accented EN + low-bitrate codec produces very
+# low log-probs.  The hallucination guard and compression_ratio still protect us.
+WHISPER_EN_LOG_PROB_THRESHOLD: float | None = None
 # More lenient no-speech threshold — EN calls have longer pauses between turns
-WHISPER_EN_NO_SPEECH_THRESHOLD: float = 0.7
+# 0.7 still drops some valid speech; 0.8 keeps it while filtering real silence
+WHISPER_EN_NO_SPEECH_THRESHOLD: float = 0.8
 # Slightly looser VAD threshold for EN — fewer false silence cuts during pauses
 WHISPER_EN_VAD_THRESHOLD: float = 0.2
 # Shorter min silence to avoid cutting mid-sentence pauses in EN conversation

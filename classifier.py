@@ -378,12 +378,16 @@ def _clean_transcription(text: str, lang: str) -> str:
     On 8kHz G.711 codec audio, Whisper sometimes emits Arabic, Hebrew, or Latin
     diacritic characters that are not present in the actual speech.  For Thai output
     we keep only Thai script (U+0E00–U+0E7F), ASCII printable, and whitespace.
-    For other languages we only strip the known-bad non-Latin Unicode blocks that
-    appear in our data (Arabic U+0600–U+06FF, Hebrew U+0590–U+05FF).
+    For EN we keep only basic Latin + common punctuation (strips Icelandic, Arabic,
+    Hebrew, CJK, etc. that appear as hallucination artefacts).
     """
     if lang == THAI_LANGUAGE_CODE:
         # Keep Thai script + ASCII printable + whitespace; strip everything else
         text = re.sub(r"[^\u0e00-\u0e7f\u0020-\u007e\s]", "", text)
+    elif lang == ENGLISH_LANGUAGE_CODE:
+        # Keep only ASCII printable + basic Latin-1 supplement (accented chars)
+        # Strips Icelandic (ð, þ), Arabic, Hebrew, CJK, etc.
+        text = re.sub(r"[^\u0020-\u007e\u00c0-\u00ff\s]", "", text)
     else:
         # Strip Arabic and Hebrew blocks that appear as Whisper artifacts
         text = re.sub(r"[\u0590-\u05ff\u0600-\u06ff]", "", text)
