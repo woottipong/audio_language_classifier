@@ -1,0 +1,11 @@
+faster-whisper>=1.0.0
+tqdm>=4.65.0
+google-cloud-speech>=2.20.0
+google-cloud-storage>=2.0.0
+python-dotenv>=1.0.0
+# Optional: uncomment for MinIO/S3 support
+# boto3>=1.28.0
+
+# Development / testing
+pytest>=7.0
+pytest-mock>=3.0

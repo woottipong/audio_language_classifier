@@ -1,0 +1,27 @@
+# Virtual environment
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Results / outputs
+results/
+*.csv
+*.json
+
+# Cache
+.cache/
+*.cache
+
+# Environment variables
+.env
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
