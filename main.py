@@ -30,7 +30,7 @@ from tqdm import tqdm
 from cache import ResultCache
 from classifier import detect_language, load_model
 from config import AppConfig
-from constants import DEFAULT_MODEL_SIZE, THONBURIAN_MODEL
+from constants import DEFAULT_MODEL_SIZE
 from exporter import append_csv_row, export_csv, export_json
 from performance import PerformanceMetrics, PerformanceTimer
 from storage import LocalStorage
@@ -65,8 +65,7 @@ def parse_args() -> tuple[AppConfig, bool]:
     )
     parser.add_argument("-i", "--input", default="./audio_files", help="Input directory with audio files")
     parser.add_argument("-o", "--output", default="./results", help="Output directory for summary files")
-    parser.add_argument("--model-size", default=DEFAULT_MODEL_SIZE, help="Model size (default: base, or tiny/small/medium/large)")
-    parser.add_argument("--use-thonburian", action="store_true", help="Use Thonburian model (fine-tuned for Thai, more accurate but slower)")
+    parser.add_argument("--model-size", default=DEFAULT_MODEL_SIZE, help="Model size (default: base, or tiny/small/medium/large/large-v3-turbo/turbo)")
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"], help="Compute device")
     parser.add_argument("--compute-type", default="int8", help="Model compute type (int8/float16/float32)")
     parser.add_argument("--max-duration", type=int, default=30, help="Max seconds to read per file")
@@ -85,14 +84,11 @@ def parse_args() -> tuple[AppConfig, bool]:
     # Performance options (removed --show-timing, always show performance summary)
 
     args = parser.parse_args()
-    
-    # Use Thonburian if requested
-    model_size = THONBURIAN_MODEL if args.use_thonburian else args.model_size
 
     return AppConfig(
         input_path=args.input,
         output_dir=args.output,
-        model_size=model_size,
+        model_size=args.model_size,
         device=args.device,
         compute_type=args.compute_type,
         max_duration=args.max_duration,

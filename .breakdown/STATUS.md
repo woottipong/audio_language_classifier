@@ -14,20 +14,15 @@ Phase 2 — Enhancement & Hardening
 - [x] Epic 4: Caching & Performance (done)
 - [x] Epic 5: Export & CLI (done)
 - [x] Epic 6: Docker & Deployment (done)
-- [ ] Epic 7: Cloud Storage Backends
 - [x] Epic 8: Testing & Quality
 - [ ] Epic 9: Observability & Monitoring
-- [ ] Epic 10: English Transcription Quality
+- [x] Epic 10: English Transcription Quality (done)
 
-**Overall: ~80% complete** (MVP done + full test suite, enhancement phase)
+**Overall: ~90% complete** (MVP done + full test suite + EN quality improvements)
 
 ## Current Priorities
 
-1. **medium** — Cloud storage backend (GCS/MinIO) — interface พร้อมแล้ว ขาด implementation
-2. **low** — Structured logging + metrics export (task-015)
-3. **low** — Performance benchmarking documentation
-4. **medium** — Cloud storage backend (GCS/MinIO) — interface พร้อมแล้ว ขาด implementation
-5. **low** — Performance benchmarking documentation
+1. **low** — Structured logging + metrics export (task-015)
 
 ## Blockers
 
@@ -43,7 +38,6 @@ Phase 2 — Enhancement & Hardening
 | E4 | Caching & Performance | done | task-007, task-008 |
 | E5 | Export & CLI | done | task-009, task-010 |
 | E6 | Docker & Deployment | done | task-011 |
-| E7 | Cloud Storage Backends | todo | task-012 |
 | E8 | Testing & Quality | done | task-013, task-014 |
 | E9 | Observability & Monitoring | todo | task-015 |
 | E10 | English Transcription Quality | done | task-016, task-017, task-018 |
@@ -63,7 +57,6 @@ Phase 2 — Enhancement & Hardening
 | task-009 | CSV + JSON exporter | E5 | done | high |
 | task-010 | CLI argument parsing + batch orchestration | E5 | done | high |
 | task-011 | Dockerfile (GPU + CPU variants) | E6 | done | medium |
-| task-012 | GCS/MinIO storage backend | E7 | todo | high |
 | task-013 | Unit tests — core modules | E8 | done | high |
 | task-014 | Integration tests — end-to-end | E8 | done | high |
 | task-015 | Structured logging + metrics export | E9 | todo | low |

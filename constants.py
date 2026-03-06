@@ -29,10 +29,6 @@ DEFAULT_MODEL_SIZE: str = "base"
 DEFAULT_DEVICE: str = "auto"
 DEFAULT_COMPUTE_TYPE: str = "int8"
 
-# Thonburian models - fine-tuned for Thai (biodatlab), use with --use-thonburian
-THONBURIAN_MODEL: str = "Vinxscribe/biodatlab-whisper-th-large-v3-faster"  # CT2 format
-THONBURIAN_MEDIUM: str = "biodatlab/whisper-th-medium-combined"  # Original (not CT2)
-
 # Standard Whisper models (can override with --model-size)
 WHISPER_BASE_MODEL: str = "base"
 WHISPER_SMALL_MODEL: str = "small"
@@ -108,6 +104,8 @@ WHISPER_EN_NO_SPEECH_THRESHOLD: float = 0.7
 WHISPER_EN_VAD_THRESHOLD: float = 0.2
 # Shorter min silence to avoid cutting mid-sentence pauses in EN conversation
 WHISPER_EN_VAD_MIN_SILENCE_DURATION_MS: int = 500
+# EN speech is naturally more repetitive (filler words, backchannel) — allow higher ratio
+WHISPER_EN_COMPRESSION_RATIO_THRESHOLD: float = 3.0
 
 CSV_FIELDNAMES: list[str] = [
     "file_name",

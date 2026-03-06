@@ -26,6 +26,7 @@ from constants import (
     WHISPER_EN_NO_REPEAT_NGRAM_SIZE,
     WHISPER_EN_NO_SPEECH_THRESHOLD,
     WHISPER_EN_REPETITION_PENALTY,
+    WHISPER_EN_COMPRESSION_RATIO_THRESHOLD,
     WHISPER_EN_VAD_MIN_SILENCE_DURATION_MS,
     WHISPER_EN_VAD_THRESHOLD,
     WHISPER_HALLUCINATION_WORD_RATIO,
@@ -36,7 +37,6 @@ from constants import (
     WHISPER_REPETITION_PENALTY,
     WHISPER_TRANSCRIPTION_BEAM_SIZE,
 )
-from exceptions import AudioProcessingError
 from google_stt import transcribe_with_chirp
 
 logger = logging.getLogger(__name__)
@@ -157,7 +157,13 @@ def _detect_language_only(file_path: Path, model: WhisperModel) -> tuple:
         vad_parameters=_get_vad_parameters(),
     )
     
-    return info.language, round(info.language_probability, 4), round(info.duration, 2) if hasattr(info, 'duration') else 0.0
+    duration = round(info.duration, 2) if hasattr(info, "duration") else 0.0
+    if duration == 0.0:
+        logger.warning(
+            "No speech detected (duration=0.0) in %s — VAD filtered all audio",
+            file_path.name,
+        )
+    return info.language, round(info.language_probability, 4), duration
 
 
 def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
@@ -213,6 +219,7 @@ def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
     no_repeat_ngram_size = WHISPER_EN_NO_REPEAT_NGRAM_SIZE if is_english else WHISPER_NO_REPEAT_NGRAM_SIZE
     log_prob_threshold = WHISPER_EN_LOG_PROB_THRESHOLD if is_english else WHISPER_LOG_PROB_THRESHOLD
     no_speech_threshold = WHISPER_EN_NO_SPEECH_THRESHOLD if is_english else WHISPER_NO_SPEECH_THRESHOLD
+    compression_ratio_threshold = WHISPER_EN_COMPRESSION_RATIO_THRESHOLD if is_english else WHISPER_COMPRESSION_RATIO_THRESHOLD
 
     beam_size = _get_adaptive_beam_size("transcription")
     segments, info = model.transcribe(
@@ -222,7 +229,7 @@ def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
         condition_on_previous_text=condition_on_prev,
         repetition_penalty=repetition_penalty,
         no_repeat_ngram_size=no_repeat_ngram_size,
-        compression_ratio_threshold=WHISPER_COMPRESSION_RATIO_THRESHOLD,
+        compression_ratio_threshold=compression_ratio_threshold,
         log_prob_threshold=log_prob_threshold,
         no_speech_threshold=no_speech_threshold,
         vad_filter=True,
