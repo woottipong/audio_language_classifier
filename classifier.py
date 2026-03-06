@@ -135,30 +135,47 @@ def _detect_language_only(file_path: Path, model: WhisperModel) -> tuple:
 
 def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
     """Perform full transcription with Whisper.
-    
+
+    Two-pass strategy:
+    1. Quick detection pass (beam_size=1) to identify the language reliably.
+    2. Full transcription pass with the detected language as an explicit hint,
+       so Whisper never has to guess and produces complete, accurate output for
+       every language — especially important for English clips that are short or
+       start with silence.
+
     Args:
         file_path: Path to audio file
         model: Loaded WhisperModel instance
-        
+
     Returns:
         Tuple of (detected_lang, probability, duration, transcription_text, segments_list)
     """
+    # --- Pass 1: detect language only (fast) ---
+    detected_lang, probability, duration = _detect_language_only(file_path, model)
+
+    logger.debug(
+        "Language detected for transcription: %s (prob=%.4f) — %s",
+        detected_lang,
+        probability,
+        file_path.name,
+    )
+
+    # --- Pass 2: transcribe with confirmed language hint ---
     beam_size = _get_adaptive_beam_size("transcription")
     segments, info = model.transcribe(
         str(file_path),
+        language=detected_lang,
         beam_size=beam_size,
         vad_filter=True,
         vad_parameters=_get_vad_parameters(),
     )
-    
-    detected_lang = info.language
-    probability = round(info.language_probability, 4)
-    duration = round(info.duration, 2) if hasattr(info, 'duration') else 0.0
-    
-    # Convert segments to list and extract text
+
+    # Use detection-pass values (more reliable; info here may differ slightly)
+    duration = duration or (round(info.duration, 2) if hasattr(info, "duration") else 0.0)
+
     segments_list = list(segments)
-    transcription = " ".join([segment.text for segment in segments_list]).strip()
-    
+    transcription = " ".join(segment.text for segment in segments_list).strip()
+
     return detected_lang, probability, duration, transcription, segments_list
 
 
