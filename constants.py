@@ -65,6 +65,24 @@ VAD_THRESHOLD: float = 0.3
 VAD_MIN_SPEECH_DURATION_MS: int = 100
 VAD_MIN_SILENCE_DURATION_MS: int = 1000
 
+# Anti-hallucination parameters for Whisper transcription
+# condition_on_previous_text=False: break the hallucination cascade between 30-s chunks
+WHISPER_CONDITION_ON_PREVIOUS_TEXT: bool = False
+# repetition_penalty > 1 penalises tokens that were recently generated
+WHISPER_REPETITION_PENALTY: float = 1.3
+# Prevent any 3-gram from repeating (stops "นี่นี่นี่" loops)
+WHISPER_NO_REPEAT_NGRAM_SIZE: int = 3
+# Discard segments whose output is too compressible (i.e. highly repetitive)
+WHISPER_COMPRESSION_RATIO_THRESHOLD: float = 2.4
+# Minimum avg log-probability; segments below this are treated as failed/silence
+WHISPER_LOG_PROB_THRESHOLD: float = -1.0
+# Mark chunk as no-speech when silence probability exceeds this
+WHISPER_NO_SPEECH_THRESHOLD: float = 0.6
+# Warn when language detection confidence is below this threshold
+WHISPER_LOW_CONFIDENCE_THRESHOLD: float = 0.5
+# Any word that accounts for more than this fraction of all words = hallucination
+WHISPER_HALLUCINATION_WORD_RATIO: float = 0.6
+
 CSV_FIELDNAMES: list[str] = [
     "file_name",
     "detected_lang",

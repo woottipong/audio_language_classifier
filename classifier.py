@@ -18,7 +18,15 @@ from constants import (
     VAD_MIN_SILENCE_DURATION_MS,
     VAD_MIN_SPEECH_DURATION_MS,
     VAD_THRESHOLD,
+    WHISPER_COMPRESSION_RATIO_THRESHOLD,
+    WHISPER_CONDITION_ON_PREVIOUS_TEXT,
     WHISPER_DETECTION_BEAM_SIZE,
+    WHISPER_HALLUCINATION_WORD_RATIO,
+    WHISPER_LOG_PROB_THRESHOLD,
+    WHISPER_LOW_CONFIDENCE_THRESHOLD,
+    WHISPER_NO_REPEAT_NGRAM_SIZE,
+    WHISPER_NO_SPEECH_THRESHOLD,
+    WHISPER_REPETITION_PENALTY,
     WHISPER_TRANSCRIPTION_BEAM_SIZE,
 )
 from exceptions import AudioProcessingError
@@ -160,12 +168,33 @@ def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
         file_path.name,
     )
 
-    # --- Pass 2: transcribe with confirmed language hint ---
+    if probability < WHISPER_LOW_CONFIDENCE_THRESHOLD:
+        logger.warning(
+            "Low language-detection confidence for %s: lang=%s prob=%.4f — "
+            "transcription quality may be reduced",
+            file_path.name,
+            detected_lang,
+            probability,
+        )
+
+    # --- Pass 2: transcribe with confirmed language hint + anti-hallucination params ---
     beam_size = _get_adaptive_beam_size("transcription")
     segments, info = model.transcribe(
         str(file_path),
         language=detected_lang,
         beam_size=beam_size,
+        # Break cascade: do NOT feed previous chunk output as prompt for next chunk
+        condition_on_previous_text=WHISPER_CONDITION_ON_PREVIOUS_TEXT,
+        # Penalise recently generated tokens to suppress repetition loops
+        repetition_penalty=WHISPER_REPETITION_PENALTY,
+        # Prevent any 3-gram from repeating inside a single chunk
+        no_repeat_ngram_size=WHISPER_NO_REPEAT_NGRAM_SIZE,
+        # Discard segments whose output is too compressible (too repetitive)
+        compression_ratio_threshold=WHISPER_COMPRESSION_RATIO_THRESHOLD,
+        # Discard low-confidence segments
+        log_prob_threshold=WHISPER_LOG_PROB_THRESHOLD,
+        # Mark chunk as no-speech when silence probability is high
+        no_speech_threshold=WHISPER_NO_SPEECH_THRESHOLD,
         vad_filter=True,
         vad_parameters=_get_vad_parameters(),
     )
@@ -175,6 +204,15 @@ def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
 
     segments_list = list(segments)
     transcription = " ".join(segment.text for segment in segments_list).strip()
+
+    # Guard: if the output is still a hallucination loop, return empty and warn
+    if _is_hallucination(transcription):
+        logger.warning(
+            "Hallucination detected in transcription of %s — returning empty string. "
+            "Consider using --use-google-for-thai or a larger Whisper model.",
+            file_path.name,
+        )
+        transcription = ""
 
     return detected_lang, probability, duration, transcription, segments_list
 
@@ -201,6 +239,22 @@ def _transcribe_thai_with_google(file_path: Path, whisper_transcription: str, se
         return whisper_transcription, TRANSCRIPTION_SOURCE_WHISPER_FALLBACK
     
     return transcription_text, TRANSCRIPTION_SOURCE_GOOGLE_CHIRP
+
+
+def _is_hallucination(text: str) -> bool:
+    """Return True when the transcription is a repetition loop (Whisper hallucination).
+
+    Heuristic: if a single word accounts for more than WHISPER_HALLUCINATION_WORD_RATIO
+    of all words the output is almost certainly a Whisper loop, not real speech.
+    """
+    words = text.split()
+    if len(words) < 10:
+        return False
+    counts: dict[str, int] = {}
+    for w in words:
+        counts[w] = counts.get(w, 0) + 1
+    max_count = max(counts.values())
+    return max_count / len(words) > WHISPER_HALLUCINATION_WORD_RATIO
 
 
 def detect_language(
