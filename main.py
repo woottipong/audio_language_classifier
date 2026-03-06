@@ -20,6 +20,7 @@ import argparse
 import logging
 import sys
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -30,7 +31,7 @@ from cache import ResultCache
 from classifier import detect_language, load_model
 from config import AppConfig
 from constants import DEFAULT_MODEL_SIZE, THONBURIAN_MODEL
-from exporter import export_csv, export_json
+from exporter import append_csv_row, export_csv, export_json
 from performance import PerformanceMetrics, PerformanceTimer
 from storage import LocalStorage
 
@@ -111,7 +112,13 @@ def parse_args() -> tuple[AppConfig, bool]:
 # Batch processing
 # ---------------------------------------------------------------------------
 
-def process_files(file_paths: list[str], cfg: AppConfig, metrics: PerformanceMetrics, cache: ResultCache | None = None) -> list[dict]:
+def process_files(
+    file_paths: list[str],
+    cfg: AppConfig,
+    metrics: PerformanceMetrics,
+    cache: ResultCache | None = None,
+    on_result: Callable[[dict, list[dict]], None] | None = None,
+) -> list[dict]:
     """Process audio files concurrently and return classification results.
     
     Note: Uses ThreadPoolExecutor instead of ProcessPoolExecutor because:
@@ -190,7 +197,11 @@ def process_files(file_paths: list[str], cfg: AppConfig, metrics: PerformanceMet
                 try:
                     result = future.result()
                     results.append(result)
-                    
+
+                    # Write result immediately after each file completes
+                    if on_result is not None:
+                        on_result(result, results)
+
                     # Update metrics
                     metrics.total_files += 1
                     if result.get("detected_lang") != "error":
@@ -265,8 +276,19 @@ def main() -> None:
             logger.warning("No audio files found in %s. Exiting.", cfg.input_path)
             sys.exit(0)
 
-        results = process_files(file_paths, cfg, metrics, cache)
+        # Prepare incremental CSV path — cleared before processing so each run starts fresh
+        incremental_csv = Path(cfg.output_dir) / "summary.csv"
+        if incremental_csv.exists():
+            incremental_csv.unlink()
 
+        def _on_result(result: dict, current_results: list[dict]) -> None:
+            """Write one completed result to disk immediately."""
+            append_csv_row(result, incremental_csv, cfg.enable_transcription)
+            export_json(current_results, cfg.output_dir)
+
+        results = process_files(file_paths, cfg, metrics, cache, on_result=_on_result)
+
+        # Overwrite with final sorted results for deterministic output
         export_csv(results, cfg.output_dir, cfg.enable_transcription)
         export_json(results, cfg.output_dir)
 

@@ -46,6 +46,31 @@ def export_csv(results: list[dict], output_dir: str, include_transcription: bool
         raise StorageError(f"Failed to export CSV: {e}")
 
 
+def append_csv_row(result: dict, csv_path: Path, include_transcription: bool = False) -> None:
+    """Append a single result row to a CSV file, writing the header if the file is new or empty.
+
+    Args:
+        result: A single classification result dictionary
+        csv_path: Absolute path to the target CSV file
+        include_transcription: Whether to include transcription fields
+
+    Raises:
+        StorageError: If the append operation fails
+    """
+    try:
+        ensure_directory_exists(csv_path.parent)
+        fieldnames = CSV_FIELDNAMES if include_transcription else CSV_FIELDNAMES_NO_TRANSCRIPTION
+        write_header = not csv_path.exists() or csv_path.stat().st_size == 0
+        with open(csv_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+            if write_header:
+                writer.writeheader()
+            writer.writerow(result)
+        logger.debug("Appended row for %s to %s", result.get("file_name", "?"), csv_path)
+    except Exception as e:
+        raise StorageError(f"Failed to append CSV row: {e}")
+
+
 def export_json(results: list[dict], output_dir: str) -> Path:
     """Write results to summary.json.
     
