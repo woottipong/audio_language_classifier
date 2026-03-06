@@ -39,7 +39,7 @@ WHISPER_SMALL_MODEL: str = "small"
 WHISPER_MEDIUM_MODEL: str = "medium"
 WHISPER_LARGE_MODEL: str = "large"
 DEFAULT_MAX_DURATION: int = 30
-DEFAULT_MAX_WORKERS: int = 4
+DEFAULT_MAX_WORKERS: int = 2
 DEFAULT_LOG_LEVEL: str = "INFO"
 
 # Cache configuration
@@ -86,6 +86,9 @@ WHISPER_NO_SPEECH_PROB_THRESHOLD: float = 0.55
 WHISPER_NO_SPEECH_LANG: str = "unknown"
 # Warn when language detection confidence is below this threshold
 WHISPER_LOW_CONFIDENCE_THRESHOLD: float = 0.5
+# Languages outside TH/EN with prob below this are treated as hallucination
+# (Whisper often outputs vi/ja/ko YouTube training data on silent 8kHz audio)
+WHISPER_UNEXPECTED_LANG_PROB_THRESHOLD: float = 0.7
 # Any word that accounts for more than this fraction of all words = hallucination
 WHISPER_HALLUCINATION_WORD_RATIO: float = 0.6
 # N-gram hallucination detection — catches phrase-level repetition loops
@@ -108,8 +111,9 @@ WHISPER_EN_CONDITION_ON_PREVIOUS_TEXT: bool = False
 WHISPER_EN_REPETITION_PENALTY: float = 1.0
 # Block 5-gram repetition — allows "yes yes", "ok ok" but catches longer loops
 WHISPER_EN_NO_REPEAT_NGRAM_SIZE: int = 5
-# Moderate segment threshold — drops garbled segments while keeping accented EN
-WHISPER_EN_LOG_PROB_THRESHOLD: float = -1.5
+# Lenient segment threshold for 8kHz telephone audio — accented EN on low-bitrate
+# codecs produces lower log-probs; -1.5 drops valid speech, -2.5 keeps it
+WHISPER_EN_LOG_PROB_THRESHOLD: float = -2.5
 # More lenient no-speech threshold — EN calls have longer pauses between turns
 WHISPER_EN_NO_SPEECH_THRESHOLD: float = 0.7
 # Slightly looser VAD threshold for EN — fewer false silence cuts during pauses
@@ -119,26 +123,13 @@ WHISPER_EN_VAD_MIN_SILENCE_DURATION_MS: int = 500
 # EN speech is naturally more repetitive (filler words, backchannel) — allow higher ratio
 WHISPER_EN_COMPRESSION_RATIO_THRESHOLD: float = 3.0
 
-# Initial prompts — prime Whisper with domain-specific vocabulary for accurate decoding.
-# Use natural sentence form (not a keyword list): a bare keyword list is trivial for
-# Whisper to echo verbatim when there is no clear speech, causing prompt hallucinations.
-WHISPER_EN_INITIAL_PROMPT: str = (
-    "Hello, I need an ambulance. "
-    "There's been a motorcycle accident near Patong, Phuket. "
-    "Please send help to Vachira Hospital. "
-    "Cherng Talay, Kathu, Kamala."
-)
 # Minimum EN detection probability to attempt transcription.
-# Below this threshold, the file is likely misdetected Thai/silence and
-# the EN initial_prompt causes vocabulary hallucinations instead of real output.
+# Below this threshold, the file is likely misdetected Thai/silence.
 WHISPER_EN_TRANSCRIPTION_MIN_PROB: float = 0.40
-WHISPER_TH_INITIAL_PROMPT: str = (
-    "ศูนย์รับแจ้งเหตุฉุกเฉิน ทองไข่มุก ภูเก็ต "
-    "ป่าตอง กะทู้ เชิงทะเล กมลา โรงพยาบาลวชิระ "
-    "รถพยาบาล อุบัติเหตุ มอเตอร์ไซค์ โรงแรม"
-)
-# Temperature fallback — retry with higher temperatures when segment quality is low
-WHISPER_TEMPERATURE_FALLBACK: list[float] = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+# Temperature — use 0.0 only (greedy/beam search).  Temperature fallback lists
+# like [0.0, 0.2, 0.4, 0.6, 0.8, 1.0] retry each segment up to 6 times which
+# makes noisy telephone audio extremely slow without meaningful quality gain.
+WHISPER_TEMPERATURE_FALLBACK: float = 0.0
 
 CSV_FIELDNAMES: list[str] = [
     "file_name",

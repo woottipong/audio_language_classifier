@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,7 +27,6 @@ from constants import (
     WHISPER_DETECTION_BEAM_SIZE,
     WHISPER_EN_COMPRESSION_RATIO_THRESHOLD,
     WHISPER_EN_CONDITION_ON_PREVIOUS_TEXT,
-    WHISPER_EN_INITIAL_PROMPT,
     WHISPER_EN_LOG_PROB_THRESHOLD,
     WHISPER_EN_NO_REPEAT_NGRAM_SIZE,
     WHISPER_EN_NO_SPEECH_THRESHOLD,
@@ -42,11 +43,10 @@ from constants import (
     WHISPER_NO_SPEECH_PROB_THRESHOLD,
     WHISPER_NO_SPEECH_THRESHOLD,
     WHISPER_REPETITION_PENALTY,
-    WHISPER_TEMPERATURE_FALLBACK,
-    WHISPER_TH_INITIAL_PROMPT,
     WHISPER_CPU_THREADS,
     WHISPER_EN_TRANSCRIPTION_MIN_PROB,
     WHISPER_TRANSCRIPTION_BEAM_SIZE,
+    WHISPER_UNEXPECTED_LANG_PROB_THRESHOLD,
 )
 from google_stt import transcribe_with_chirp
 
@@ -169,6 +169,42 @@ def _get_vad_parameters(lang: str = "") -> dict:
     }
 
 
+def _preprocess_audio(file_path: Path) -> Path | None:
+    """Preprocess telephone audio with ffmpeg for better Whisper accuracy.
+
+    Applies:
+    - Highpass at 200Hz to remove telephone line hum / DC offset
+    - Loudnorm to normalise volume across files
+    - Resample to 16kHz mono WAV (Whisper's native format)
+
+    Returns a temp file path on success, or None if ffmpeg fails.
+    The caller is responsible for deleting the temp file.
+    """
+    try:
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp.close()
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", str(file_path),
+                "-af", "highpass=f=200,loudnorm",
+                "-ar", "16000", "-ac", "1",
+                tmp.name,
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+        if result.returncode == 0:
+            return Path(tmp.name)
+        logger.warning(
+            "ffmpeg preprocessing failed for %s: %s",
+            file_path.name, result.stderr.decode(errors="replace")[:200],
+        )
+        Path(tmp.name).unlink(missing_ok=True)
+    except Exception as e:
+        logger.warning("Audio preprocessing error for %s: %s", file_path.name, e)
+    return None
+
+
 def _detect_language_only(file_path: Path, model: WhisperModel) -> tuple:
     """Perform quick language detection without full transcription.
     
@@ -184,21 +220,20 @@ def _detect_language_only(file_path: Path, model: WhisperModel) -> tuple:
     # decoded segments.  Applying VAD here with TH-tuned defaults silently drops
     # EN audio (lower speech energy, longer pauses) and produces duration=0.0,
     # which then propagates as "no speech" even though audio is present.
-    segments, info = model.transcribe(
+    _, info = model.transcribe(
         str(file_path),
         beam_size=beam_size,
         best_of=1,
         vad_filter=False,
     )
-    # Consume the generator so faster-whisper completes the forward pass
-    for _ in segments:
-        pass
+    # Do NOT iterate segments — language and duration are available from info
+    # immediately.  Iterating would decode the entire audio file unnecessarily.
 
     duration = round(info.duration, 2) if hasattr(info, "duration") else 0.0
     return info.language, round(info.language_probability, 4), duration
 
 
-def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
+def _transcribe_with_whisper(file_path: Path, model: WhisperModel, preprocess: bool = False) -> tuple:
     """Perform full transcription with Whisper.
 
     Two-pass strategy:
@@ -211,6 +246,7 @@ def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
     Args:
         file_path: Path to audio file
         model: Loaded WhisperModel instance
+        preprocess: If True, run ffmpeg highpass+loudnorm before transcription
 
     Returns:
         Tuple of (detected_lang, probability, duration, transcription_text, segments_list)
@@ -264,37 +300,41 @@ def _transcribe_with_whisper(file_path: Path, model: WhisperModel) -> tuple:
     no_speech_threshold = WHISPER_EN_NO_SPEECH_THRESHOLD if is_english else WHISPER_NO_SPEECH_THRESHOLD
     compression_ratio_threshold = WHISPER_EN_COMPRESSION_RATIO_THRESHOLD if is_english else WHISPER_COMPRESSION_RATIO_THRESHOLD
 
-    # Select initial prompt for domain-specific vocabulary hints
-    if is_english:
-        initial_prompt = WHISPER_EN_INITIAL_PROMPT
-    elif detected_lang == THAI_LANGUAGE_CODE:
-        initial_prompt = WHISPER_TH_INITIAL_PROMPT
-    else:
-        initial_prompt = ""
-
     beam_size = _get_adaptive_beam_size("transcription")
-    segments, info = model.transcribe(
-        str(file_path),
-        language=detected_lang,
-        beam_size=beam_size,
-        initial_prompt=initial_prompt,
-        temperature=WHISPER_TEMPERATURE_FALLBACK,
-        condition_on_previous_text=condition_on_prev,
-        repetition_penalty=repetition_penalty,
-        no_repeat_ngram_size=no_repeat_ngram_size,
-        compression_ratio_threshold=compression_ratio_threshold,
-        log_prob_threshold=log_prob_threshold,
-        no_speech_threshold=no_speech_threshold,
-        vad_filter=True,
-        vad_parameters=_get_vad_parameters(detected_lang),
-    )
 
-    # Use detection-pass values (more reliable; info here may differ slightly)
-    duration = duration or (round(info.duration, 2) if hasattr(info, "duration") else 0.0)
+    # Optionally preprocess audio (highpass + loudnorm) for better quality on
+    # 8kHz telephone recordings.  Falls back to original file if ffmpeg fails.
+    preprocessed_path: Path | None = None
+    transcribe_path = file_path
+    if preprocess:
+        preprocessed_path = _preprocess_audio(file_path)
+        if preprocessed_path:
+            transcribe_path = preprocessed_path
 
-    segments_list = list(segments)
-    transcription = " ".join(segment.text.strip() for segment in segments_list).strip()
-    transcription = _clean_transcription(transcription, detected_lang)
+    try:
+        segments, info = model.transcribe(
+            str(transcribe_path),
+            language=detected_lang,
+            beam_size=beam_size,
+            condition_on_previous_text=condition_on_prev,
+            repetition_penalty=repetition_penalty,
+            no_repeat_ngram_size=no_repeat_ngram_size,
+            compression_ratio_threshold=compression_ratio_threshold,
+            log_prob_threshold=log_prob_threshold,
+            no_speech_threshold=no_speech_threshold,
+            vad_filter=True,
+            vad_parameters=_get_vad_parameters(detected_lang),
+        )
+
+        # Use detection-pass values (more reliable; info here may differ slightly)
+        duration = duration or (round(info.duration, 2) if hasattr(info, "duration") else 0.0)
+
+        segments_list = list(segments)
+        transcription = " ".join(segment.text.strip() for segment in segments_list).strip()
+        transcription = _clean_transcription(transcription, detected_lang)
+    finally:
+        if preprocessed_path:
+            preprocessed_path.unlink(missing_ok=True)
 
     # Guard: if the output is still a hallucination loop, return empty and warn
     if _is_hallucination(transcription):
@@ -341,7 +381,6 @@ def _clean_transcription(text: str, lang: str) -> str:
     For other languages we only strip the known-bad non-Latin Unicode blocks that
     appear in our data (Arabic U+0600–U+06FF, Hebrew U+0590–U+05FF).
     """
-    import re
     if lang == THAI_LANGUAGE_CODE:
         # Keep Thai script + ASCII printable + whitespace; strip everything else
         text = re.sub(r"[^\u0e00-\u0e7f\u0020-\u007e\s]", "", text)
@@ -396,7 +435,8 @@ def detect_language(
     max_duration: int,
     model: WhisperModel,
     enable_transcription: bool = False,
-    use_google_for_thai: bool = False
+    use_google_for_thai: bool = False,
+    preprocess_audio: bool = False,
 ) -> dict:
     """Detect the language of an audio file and optionally transcribe it.
 
@@ -406,6 +446,7 @@ def detect_language(
         model: Loaded WhisperModel instance
         enable_transcription: If True, transcribe entire audio; if False, quick detection only
         use_google_for_thai: If True, use Google Chirp 2 for Thai transcription
+        preprocess_audio: If True, apply ffmpeg highpass+loudnorm before transcription
 
     Returns:
         Dictionary with detection/transcription results
@@ -415,12 +456,25 @@ def detect_language(
     try:
         if enable_transcription:
             detected_lang, probability, duration, transcription, segments_list = _transcribe_with_whisper(
-                file_path, model
+                file_path, model, preprocess=preprocess_audio
             )
 
             # Override Whisper's default "en" for silent/empty files
             if duration == 0.0 and probability < WHISPER_NO_SPEECH_PROB_THRESHOLD:
                 detected_lang = WHISPER_NO_SPEECH_LANG
+
+            # Filter unexpected languages (vi/ja/ko etc.) with low confidence —
+            # Whisper hallucinates YouTube training data on silent 8kHz audio
+            if (
+                detected_lang not in (ENGLISH_LANGUAGE_CODE, THAI_LANGUAGE_CODE, WHISPER_NO_SPEECH_LANG)
+                and probability < WHISPER_UNEXPECTED_LANG_PROB_THRESHOLD
+            ):
+                logger.info(
+                    "Unexpected lang %s (prob=%.4f) in %s — overriding to %s",
+                    detected_lang, probability, file_name, WHISPER_NO_SPEECH_LANG,
+                )
+                detected_lang = WHISPER_NO_SPEECH_LANG
+                transcription = ""
 
             if detected_lang == THAI_LANGUAGE_CODE and use_google_for_thai:
                 # Use cached transcription and segments - no need to transcribe again!
@@ -457,6 +511,17 @@ def detect_language(
             if duration == 0.0 and probability < WHISPER_NO_SPEECH_PROB_THRESHOLD:
                 detected_lang = WHISPER_NO_SPEECH_LANG
 
+            # Filter unexpected languages with low confidence
+            if (
+                detected_lang not in (ENGLISH_LANGUAGE_CODE, THAI_LANGUAGE_CODE, WHISPER_NO_SPEECH_LANG)
+                and probability < WHISPER_UNEXPECTED_LANG_PROB_THRESHOLD
+            ):
+                logger.info(
+                    "Unexpected lang %s (prob=%.4f) in %s — overriding to %s",
+                    detected_lang, probability, file_name, WHISPER_NO_SPEECH_LANG,
+                )
+                detected_lang = WHISPER_NO_SPEECH_LANG
+
             result = DetectionResult(
                 file_name=file_name,
                 detected_lang=detected_lang,
@@ -464,7 +529,7 @@ def detect_language(
                 is_english=(detected_lang == ENGLISH_LANGUAGE_CODE),
                 duration=duration,
             )
-            
+
             logger.debug(
                 "File: %s | lang=%s | prob=%.4f | english=%s",
                 file_name,

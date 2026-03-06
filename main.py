@@ -72,6 +72,7 @@ def parse_args() -> tuple[AppConfig, bool]:
     parser.add_argument("--max-workers", type=int, default=4, help="Number of concurrent workers")
     parser.add_argument("--transcribe", action="store_true", help="Enable full transcription of audio content")
     parser.add_argument("--use-google-for-thai", action="store_true", help="Use Google Cloud STT (Chirp 2) for Thai language transcription (requires GOOGLE_APPLICATION_CREDENTIALS)")
+    parser.add_argument("--preprocess-audio", action="store_true", help="Apply ffmpeg highpass+loudnorm preprocessing for noisy telephone audio")
     parser.add_argument("--log-level", default="INFO", help="Logging level")
     parser.add_argument("--log-file", default="", help="Optional log file path")
     
@@ -95,6 +96,7 @@ def parse_args() -> tuple[AppConfig, bool]:
         max_workers=args.max_workers,
         enable_transcription=args.transcribe,
         use_google_for_thai=args.use_google_for_thai,
+        preprocess_audio=args.preprocess_audio,
         log_level=args.log_level,
         log_file=args.log_file,
         enable_cache=args.enable_cache,
@@ -153,11 +155,12 @@ def process_files(
         
         # Process file
         result = detect_language(
-            file_path, 
-            cfg.max_duration, 
-            model, 
+            file_path,
+            cfg.max_duration,
+            model,
             cfg.enable_transcription,
-            cfg.use_google_for_thai
+            cfg.use_google_for_thai,
+            cfg.preprocess_audio,
         )
         
         # Cache result
@@ -170,8 +173,10 @@ def process_files(
         
         return result
 
-    # Optimize: Use more workers for better CPU utilization
-    # Rule of thumb: 2x CPU cores for I/O-bound tasks
+    # CTranslate2 releases the GIL during inference, so ThreadPool can
+    # parallelize.  However each worker uses WHISPER_CPU_THREADS internally,
+    # so too many workers causes thread contention on CPU.
+    # Cap at file count to avoid idle threads.
     optimal_workers = min(cfg.max_workers, len(file_paths))
     
     start_time = time.time()
