@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-import subprocess
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,6 +52,7 @@ logger = logging.getLogger(__name__)
 
 _model: WhisperModel | None = None
 _model_size: str = "base"  # Track model size for adaptive beam size
+_thai_model: WhisperModel | None = None
 
 
 @dataclass
@@ -169,40 +168,40 @@ def _get_vad_parameters(lang: str = "") -> dict:
     }
 
 
-def _preprocess_audio(file_path: Path) -> Path | None:
-    """Preprocess telephone audio with ffmpeg for better Whisper accuracy.
+def load_thai_model(model_id: str, device: str, compute_type: str) -> WhisperModel:
+    """Load a Thai-optimised Whisper model for Thai transcription.
 
-    Applies:
-    - Highpass at 200Hz to remove telephone line hum / DC offset
-    - Loudnorm to normalise volume across files
-    - Resample to 16kHz mono WAV (Whisper's native format)
+    Args:
+        model_id: HuggingFace model ID (e.g. biodatlab/distill-whisper-th-large-v3)
+        device: Device to run on (auto/cpu/cuda)
+        compute_type: Compute type (int8/float16/float32)
 
-    Returns a temp file path on success, or None if ffmpeg fails.
-    The caller is responsible for deleting the temp file.
+    Returns:
+        Loaded WhisperModel instance
     """
-    try:
-        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        tmp.close()
-        result = subprocess.run(
-            [
-                "ffmpeg", "-y", "-i", str(file_path),
-                "-af", "highpass=f=200,loudnorm",
-                "-ar", "16000", "-ac", "1",
-                tmp.name,
-            ],
-            capture_output=True,
-            timeout=30,
+    global _thai_model
+    if _thai_model is None:
+        effective_compute_type = compute_type
+        if compute_type == "int8" and device in ("cuda", "auto"):
+            try:
+                import ctranslate2
+                if ctranslate2.get_cuda_device_count() > 0:
+                    effective_compute_type = DEFAULT_GPU_COMPUTE_TYPE
+            except Exception:
+                pass
+
+        logger.info(
+            "Loading Thai model: %s (device=%s, compute_type=%s)",
+            model_id, device, effective_compute_type,
         )
-        if result.returncode == 0:
-            return Path(tmp.name)
-        logger.warning(
-            "ffmpeg preprocessing failed for %s: %s",
-            file_path.name, result.stderr.decode(errors="replace")[:200],
+        _thai_model = WhisperModel(
+            model_id,
+            device=device,
+            compute_type=effective_compute_type,
+            cpu_threads=WHISPER_CPU_THREADS,
         )
-        Path(tmp.name).unlink(missing_ok=True)
-    except Exception as e:
-        logger.warning("Audio preprocessing error for %s: %s", file_path.name, e)
-    return None
+        logger.info("Thai model loaded successfully.")
+    return _thai_model
 
 
 def _detect_language_only(file_path: Path, model: WhisperModel) -> tuple:
@@ -233,20 +232,23 @@ def _detect_language_only(file_path: Path, model: WhisperModel) -> tuple:
     return info.language, round(info.language_probability, 4), duration
 
 
-def _transcribe_with_whisper(file_path: Path, model: WhisperModel, preprocess: bool = False) -> tuple:
+def _transcribe_with_whisper(
+    file_path: Path,
+    model: WhisperModel,
+    thai_model: WhisperModel | None = None,
+) -> tuple:
     """Perform full transcription with Whisper.
 
     Two-pass strategy:
     1. Quick detection pass (beam_size=1) to identify the language reliably.
-    2. Full transcription pass with the detected language as an explicit hint,
-       so Whisper never has to guess and produces complete, accurate output for
-       every language — especially important for English clips that are short or
-       start with silence.
+    2. Full transcription pass with the detected language as an explicit hint.
+       If a Thai-optimised model is provided and the language is Thai, uses that
+       model for pass 2 instead of the main model.
 
     Args:
         file_path: Path to audio file
-        model: Loaded WhisperModel instance
-        preprocess: If True, run ffmpeg highpass+loudnorm before transcription
+        model: Loaded WhisperModel instance (detection + EN transcription)
+        thai_model: Optional Thai-optimised WhisperModel for TH transcription
 
     Returns:
         Tuple of (detected_lang, probability, duration, transcription_text, segments_list)
@@ -302,39 +304,32 @@ def _transcribe_with_whisper(file_path: Path, model: WhisperModel, preprocess: b
 
     beam_size = _get_adaptive_beam_size("transcription")
 
-    # Optionally preprocess audio (highpass + loudnorm) for better quality on
-    # 8kHz telephone recordings.  Falls back to original file if ffmpeg fails.
-    preprocessed_path: Path | None = None
-    transcribe_path = file_path
-    if preprocess:
-        preprocessed_path = _preprocess_audio(file_path)
-        if preprocessed_path:
-            transcribe_path = preprocessed_path
+    # Use Thai-optimised model for TH transcription when available
+    transcribe_model = model
+    if detected_lang == THAI_LANGUAGE_CODE and thai_model is not None:
+        transcribe_model = thai_model
+        logger.info("Using Thai model for transcription: %s", file_path.name)
 
-    try:
-        segments, info = model.transcribe(
-            str(transcribe_path),
-            language=detected_lang,
-            beam_size=beam_size,
-            condition_on_previous_text=condition_on_prev,
-            repetition_penalty=repetition_penalty,
-            no_repeat_ngram_size=no_repeat_ngram_size,
-            compression_ratio_threshold=compression_ratio_threshold,
-            log_prob_threshold=log_prob_threshold,
-            no_speech_threshold=no_speech_threshold,
-            vad_filter=True,
-            vad_parameters=_get_vad_parameters(detected_lang),
-        )
+    segments, info = transcribe_model.transcribe(
+        str(file_path),
+        language=detected_lang,
+        beam_size=beam_size,
+        condition_on_previous_text=condition_on_prev,
+        repetition_penalty=repetition_penalty,
+        no_repeat_ngram_size=no_repeat_ngram_size,
+        compression_ratio_threshold=compression_ratio_threshold,
+        log_prob_threshold=log_prob_threshold,
+        no_speech_threshold=no_speech_threshold,
+        vad_filter=True,
+        vad_parameters=_get_vad_parameters(detected_lang),
+    )
 
-        # Use detection-pass values (more reliable; info here may differ slightly)
-        duration = duration or (round(info.duration, 2) if hasattr(info, "duration") else 0.0)
+    # Use detection-pass values (more reliable; info here may differ slightly)
+    duration = duration or (round(info.duration, 2) if hasattr(info, "duration") else 0.0)
 
-        segments_list = list(segments)
-        transcription = " ".join(segment.text.strip() for segment in segments_list).strip()
-        transcription = _clean_transcription(transcription, detected_lang)
-    finally:
-        if preprocessed_path:
-            preprocessed_path.unlink(missing_ok=True)
+    segments_list = list(segments)
+    transcription = " ".join(segment.text.strip() for segment in segments_list).strip()
+    transcription = _clean_transcription(transcription, detected_lang)
 
     # Guard: if the output is still a hallucination loop, return empty and warn
     if _is_hallucination(transcription):
@@ -440,7 +435,6 @@ def detect_language(
     model: WhisperModel,
     enable_transcription: bool = False,
     use_google_for_thai: bool = False,
-    preprocess_audio: bool = False,
 ) -> dict:
     """Detect the language of an audio file and optionally transcribe it.
 
@@ -450,7 +444,6 @@ def detect_language(
         model: Loaded WhisperModel instance
         enable_transcription: If True, transcribe entire audio; if False, quick detection only
         use_google_for_thai: If True, use Google Chirp 2 for Thai transcription
-        preprocess_audio: If True, apply ffmpeg highpass+loudnorm before transcription
 
     Returns:
         Dictionary with detection/transcription results
@@ -460,7 +453,7 @@ def detect_language(
     try:
         if enable_transcription:
             detected_lang, probability, duration, transcription, segments_list = _transcribe_with_whisper(
-                file_path, model, preprocess=preprocess_audio
+                file_path, model, thai_model=_thai_model
             )
 
             # Override Whisper's default "en" for silent/empty files
