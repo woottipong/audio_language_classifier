@@ -71,7 +71,6 @@ def parse_args() -> AppConfig:
     parser.add_argument("--max-workers", type=int, default=4, help="Number of concurrent workers")
     parser.add_argument("--transcribe", action="store_true", help="Enable full transcription of audio content")
     parser.add_argument("--use-google-for-thai", action="store_true", help="Use Google Cloud STT (Chirp 2) for Thai language transcription (requires GOOGLE_APPLICATION_CREDENTIALS)")
-    parser.add_argument("--preprocess-audio", action="store_true", help="Apply ffmpeg highpass+loudnorm preprocessing for noisy telephone audio")
     parser.add_argument("--log-level", default="INFO", help="Logging level")
     parser.add_argument("--log-file", default="", help="Optional log file path")
     
@@ -91,7 +90,6 @@ def parse_args() -> AppConfig:
         max_workers=args.max_workers,
         enable_transcription=args.transcribe,
         use_google_for_thai=args.use_google_for_thai,
-        preprocess_audio=args.preprocess_audio,
         log_level=args.log_level,
         log_file=args.log_file,
         enable_cache=args.enable_cache,
@@ -152,7 +150,6 @@ def process_files(
             model,
             cfg.enable_transcription,
             cfg.use_google_for_thai,
-            cfg.preprocess_audio,
         )
         
         # Cache result
