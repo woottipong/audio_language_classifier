@@ -31,7 +31,7 @@ from cache import ResultCache
 from classifier import detect_language, load_model
 from config import AppConfig
 from constants import DEFAULT_MODEL_SIZE
-from exporter import append_csv_row, export_csv
+from exporter import append_csv_row, export_csv, export_metrics
 from performance import PerformanceMetrics, PerformanceTimer
 from storage import LocalStorage
 
@@ -278,6 +278,7 @@ def main() -> None:
 
         # Calculate final metrics
         metrics.total_processing_time = time.time() - overall_start
+        export_metrics(metrics.get_summary(), cfg.output_dir)
         
         english_count = sum(1 for r in results if r["is_english"])
         error_count = sum(1 for r in results if r["detected_lang"] == "error")

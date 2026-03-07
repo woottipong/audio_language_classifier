@@ -59,13 +59,11 @@ python main.py -i ./audio_files -o ./results --transcribe --device cuda --comput
 | `--model-size` | `base` | `tiny` / `base` / `small` / `medium` / `large` / `large-v3-turbo` / `turbo` |
 | `--device` | `auto` | `auto` / `cpu` / `cuda` |
 | `--compute-type` | `int8` | `int8` / `float16` / `float32` |
-| `--max-duration` | `30` | วินาทีที่อ่านต่อไฟล์ (สำหรับ detection) |
 | `--max-workers` | `4` | จำนวน thread |
 | `--transcribe` | off | ถอดเสียงเป็นข้อความ |
 | `--use-google-for-thai` | off | ใช้ Google Chirp 2 สำหรับภาษาไทย |
+| `--preprocess-audio` | off | ffmpeg highpass+loudnorm preprocessing สำหรับเสียงโทรศัพท์ที่มี noise |
 | `--enable-cache` | off | cache ผลลัพธ์ (ข้ามไฟล์ที่ไม่เปลี่ยน) |
-| `--cache-ttl` | `24` | อายุ cache (ชั่วโมง) |
-| `--clear-cache` | off | ล้าง cache ก่อนรัน |
 | `--log-level` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 | `--log-file` | — | บันทึก log ลงไฟล์ |
 
@@ -127,5 +125,5 @@ interview_02.wav,en,0.99,True,30.0,Hello how are you...,whisper
 
 ```bash
 .venv/bin/pytest tests/ -v
-# 126 passed
+# 129 passed
 ```

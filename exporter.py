@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import logging
 from pathlib import Path
 
@@ -68,5 +69,30 @@ def append_csv_row(result: dict, csv_path: Path, include_transcription: bool = F
         logger.debug("Appended row for %s to %s", result.get("file_name", "?"), csv_path)
     except Exception as e:
         raise StorageError(f"Failed to append CSV row: {e}")
+
+
+def export_metrics(metrics_data: dict, output_dir: str) -> Path:
+    """Write performance metrics summary to metrics.json.
+
+    Args:
+        metrics_data: Dictionary from PerformanceMetrics.get_summary()
+        output_dir: Output directory path
+
+    Returns:
+        Path to the created metrics.json file
+
+    Raises:
+        StorageError: If export fails
+    """
+    try:
+        out = Path(output_dir)
+        ensure_directory_exists(out)
+        metrics_path = out / "metrics.json"
+        with open(metrics_path, "w", encoding="utf-8") as f:
+            json.dump(metrics_data, f, indent=2)
+        logger.info("Metrics written to %s", metrics_path)
+        return metrics_path
+    except Exception as e:
+        raise StorageError(f"Failed to export metrics: {e}")
 
 

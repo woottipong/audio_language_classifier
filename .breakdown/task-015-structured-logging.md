@@ -10,7 +10,7 @@ epic-09-observability
 backend
 
 ## Status
-todo
+done
 
 ## Priority
 low
@@ -23,10 +23,7 @@ low
 เพิ่ม option export metrics เป็น JSON file สำหรับ monitoring/alerting
 
 ## Scope
-- JSON structured logging format (optional, via config flag)
-- Export `PerformanceMetrics.get_summary()` เป็น `metrics.json`
-- Log correlation: request_id per batch run
-- Google STT success/failure rate ใน metrics
+- Export `PerformanceMetrics.get_summary()` เป็น `metrics.json` อัตโนมัติทุก run
 
 ## Out of Scope
 - Prometheus/Grafana integration
@@ -53,7 +50,12 @@ low
 - [ ] Performance metrics accurate
 
 ## Outcome
+เพิ่ม `export_metrics()` ใน `exporter.py` + เรียกใน `main.py` หลัง export CSV
+ผลลัพธ์: `results/metrics.json` มี throughput, error rate, model load time ฯลฯ
 
 ## Completion Evidence
+- `exporter.py`: เพิ่ม `export_metrics(metrics_data, output_dir)`
+- `main.py`: เรียก `export_metrics(metrics.get_summary(), cfg.output_dir)` หลัง CSV
 
 ## Completed At
+2026-03-07

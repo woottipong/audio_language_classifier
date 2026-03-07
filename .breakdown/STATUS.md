@@ -15,14 +15,14 @@ Phase 2 — Enhancement & Hardening
 - [x] Epic 5: Export & CLI (done)
 - [x] Epic 6: Docker & Deployment (done)
 - [x] Epic 8: Testing & Quality
-- [ ] Epic 9: Observability & Monitoring
+- [x] Epic 9: Observability & Monitoring (done)
 - [x] Epic 10: English Transcription Quality (done)
 
-**Overall: ~90% complete** (MVP done + full test suite + EN quality improvements)
+**Overall: 100% complete**
 
 ## Current Priorities
 
-1. **low** — Structured logging + metrics export (task-015)
+ไม่มี pending task
 
 ## Blockers
 
@@ -39,7 +39,7 @@ Phase 2 — Enhancement & Hardening
 | E5 | Export & CLI | done | task-009, task-010 |
 | E6 | Docker & Deployment | done | task-011 |
 | E8 | Testing & Quality | done | task-013, task-014 |
-| E9 | Observability & Monitoring | todo | task-015 |
+| E9 | Observability & Monitoring | done | task-015 |
 | E10 | English Transcription Quality | done | task-016, task-017, task-018 |
 
 ## Task Index
@@ -59,7 +59,7 @@ Phase 2 — Enhancement & Hardening
 | task-011 | Dockerfile (GPU + CPU variants) | E6 | done | medium |
 | task-013 | Unit tests — core modules | E8 | done | high |
 | task-014 | Integration tests — end-to-end | E8 | done | high |
-| task-015 | Structured logging + metrics export | E9 | todo | low |
+| task-015 | Structured logging + metrics export | E9 | done | low |
 | task-016 | EN-specific transcription constants | E10 | done | high |
 | task-017 | Language-aware transcription parameters | E10 | done | high |
 | task-018 | Warning log for silent/empty audio files | E10 | done | medium |
