@@ -31,7 +31,7 @@ from cache import ResultCache
 from classifier import detect_language, load_model
 from config import AppConfig
 from constants import DEFAULT_MODEL_SIZE
-from exporter import append_csv_row, export_csv, export_json
+from exporter import append_csv_row, export_csv
 from performance import PerformanceMetrics, PerformanceTimer
 from storage import LocalStorage
 
@@ -270,13 +270,11 @@ def main() -> None:
         def _on_result(result: dict, current_results: list[dict]) -> None:
             """Write one completed result to disk immediately."""
             append_csv_row(result, incremental_csv, cfg.enable_transcription)
-            export_json(current_results, cfg.output_dir)
 
         results = process_files(file_paths, cfg, metrics, cache, on_result=_on_result)
 
         # Overwrite with final sorted results for deterministic output
         export_csv(results, cfg.output_dir, cfg.enable_transcription)
-        export_json(results, cfg.output_dir)
 
         # Calculate final metrics
         metrics.total_processing_time = time.time() - overall_start
